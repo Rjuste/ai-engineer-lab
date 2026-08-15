@@ -9,14 +9,14 @@ public class ConversationSummarizer
         if (olderMessages.Count == 0)
             return null;
 
-        var facts = olderMessages
-            .Where(message => message.Role == "user")
-            .Select(message => message.Content)
+        var dialogue = olderMessages
+            .Where(message => message.Role is "user" or "assistant")
+            .Select(message => $"{message.Role}: {message.Content}")
             .ToList();
 
-        if (facts.Count == 0)
+        if (dialogue.Count == 0)
             return null;
 
-        return "Summary of older conversation: " + string.Join(" | ", facts);
+        return "Summary source from older conversation: " + string.Join(" | ", dialogue);
     }
 }
