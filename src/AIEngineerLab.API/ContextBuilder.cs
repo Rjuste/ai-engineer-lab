@@ -15,7 +15,10 @@ public class ContextBuilder
         _conversationSummarizer = conversationSummarizer;
     }
 
-    public ContextBuildResult Build(string userMessage, IReadOnlyList<LlmMessage> history)
+    public ContextBuildResult Build(
+        string userMessage,
+        IReadOnlyList<LlmMessage> history,
+        IReadOnlyList<RagDocument> retrievedDocuments)
     {
         var selectedHistory = history
             .TakeLast(MaxHistoryMessages)
@@ -25,12 +28,23 @@ public class ContextBuilder
 
         var messages = new List<LlmMessage>
         {
-            new("system", "You are a concise AI assistant for the AI Engineer Lab.")
+            new("system", "You are a concise AI assistant for the AI Engineer Lab. Use retrieved knowledge when it is relevant to the user's question.")
         };
 
         if (summary is not null)
         {
             messages.Add(new LlmMessage("system", summary));
+        }
+
+        if (retrievedDocuments.Count > 0)
+        {
+            var retrievedKnowledge = string.Join(
+                "\n",
+                retrievedDocuments.Select(document => $"[{document.Id}] {document.Content}"));
+
+            messages.Add(new LlmMessage(
+                "system",
+                "Retrieved knowledge:\n" + retrievedKnowledge));
         }
 
         messages.AddRange(selectedHistory);
