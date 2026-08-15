@@ -15,16 +15,12 @@ public sealed class OpenAiLlmService : ILlmService
             ?? throw new InvalidOperationException("OPENAI_API_KEY is not configured.");
     }
 
-    public async Task<LlmGenerationResult> GenerateAsync(
+    public Task<LlmGenerationResult> GenerateAsync(
         IReadOnlyList<LlmMessage> context,
+        IReadOnlyList<LlmToolDefinition> tools,
         CancellationToken cancellationToken = default)
     {
-        var instructions = string.Join(
-            "\n\n",
-            context
-                .Where(message => message.Role == "system")
-                .Select(message => message.Content));
-
+        var instructions = BuildInstructions(context);
         var input = context
             .Where(message => message.Role is "user" or "assistant")
             .Select(message => new
@@ -34,22 +30,60 @@ public sealed class OpenAiLlmService : ILlmService
             })
             .ToArray();
 
+        var payload = new
+        {
+            model = Model,
+            instructions,
+            input,
+            tools = BuildTools(tools),
+            tool_choice = "auto",
+            max_output_tokens = 500,
+            store = true
+        };
+
+        return SendAsync(payload, cancellationToken);
+    }
+
+    public Task<LlmGenerationResult> ContinueWithToolOutputsAsync(
+        string previousResponseId,
+        IReadOnlyList<LlmMessage> context,
+        IReadOnlyList<LlmToolOutput> toolOutputs,
+        IReadOnlyList<LlmToolDefinition> tools,
+        CancellationToken cancellationToken = default)
+    {
+        var payload = new
+        {
+            model = Model,
+            previous_response_id = previousResponseId,
+            instructions = BuildInstructions(context),
+            input = toolOutputs.Select(output => new
+            {
+                type = "function_call_output",
+                call_id = output.CallId,
+                output = output.Output
+            }).ToArray(),
+            tools = BuildTools(tools),
+            tool_choice = "auto",
+            max_output_tokens = 500,
+            store = true
+        };
+
+        return SendAsync(payload, cancellationToken);
+    }
+
+    private async Task<LlmGenerationResult> SendAsync(
+        object payload,
+        CancellationToken cancellationToken)
+    {
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
             "https://api.openai.com/v1/responses");
 
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-
-        var payload = JsonSerializer.Serialize(new
-        {
-            model = Model,
-            instructions,
-            input,
-            max_output_tokens = 500,
-            store = false
-        });
-
-        request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+        request.Content = new StringContent(
+            JsonSerializer.Serialize(payload),
+            Encoding.UTF8,
+            "application/json");
 
         using var response = await _httpClient.SendAsync(request, cancellationToken);
         var json = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -61,11 +95,37 @@ public sealed class OpenAiLlmService : ILlmService
         }
 
         using var document = JsonDocument.Parse(json);
-        var root = document.RootElement;
+        return ParseGeneration(document.RootElement);
+    }
 
-        var text = root
-            .GetProperty("output")
-            .EnumerateArray()
+    private static string BuildInstructions(IReadOnlyList<LlmMessage> context)
+    {
+        return string.Join(
+            "\n\n",
+            context
+                .Where(message => message.Role == "system")
+                .Select(message => message.Content));
+    }
+
+    private static object[] BuildTools(IReadOnlyList<LlmToolDefinition> tools)
+    {
+        return tools
+            .Select(tool => (object)new
+            {
+                type = "function",
+                name = tool.Name,
+                description = tool.Description,
+                parameters = tool.Parameters,
+                strict = true
+            })
+            .ToArray();
+    }
+
+    private static LlmGenerationResult ParseGeneration(JsonElement root)
+    {
+        var outputItems = root.GetProperty("output").EnumerateArray().ToList();
+
+        var text = outputItems
             .Where(item => item.TryGetProperty("content", out _))
             .SelectMany(item => item.GetProperty("content").EnumerateArray())
             .Where(content =>
@@ -75,15 +135,24 @@ public sealed class OpenAiLlmService : ILlmService
             .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))
             ?? string.Empty;
 
+        var toolCalls = outputItems
+            .Where(item =>
+                item.TryGetProperty("type", out var type) &&
+                type.GetString() == "function_call")
+            .Select(item => new LlmToolCall(
+                item.GetProperty("call_id").GetString() ?? string.Empty,
+                item.GetProperty("name").GetString() ?? string.Empty,
+                item.GetProperty("arguments").GetString() ?? "{}"))
+            .ToList();
+
         var usage = root.GetProperty("usage");
-        var inputTokens = usage.GetProperty("input_tokens").GetInt32();
-        var outputTokens = usage.GetProperty("output_tokens").GetInt32();
-        var totalTokens = usage.GetProperty("total_tokens").GetInt32();
 
         return new LlmGenerationResult(
+            root.GetProperty("id").GetString() ?? string.Empty,
             text,
-            inputTokens,
-            outputTokens,
-            totalTokens);
+            toolCalls,
+            usage.GetProperty("input_tokens").GetInt32(),
+            usage.GetProperty("output_tokens").GetInt32(),
+            usage.GetProperty("total_tokens").GetInt32());
     }
 }
