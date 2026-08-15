@@ -1,4 +1,7 @@
 public interface IRagRetriever
 {
-    IReadOnlyList<RagSearchResult> Search(string query, int topK = 2);
+    Task<IReadOnlyList<RagSearchResult>> SearchAsync(
+        string query,
+        int topK = 2,
+        CancellationToken cancellationToken = default);
 }

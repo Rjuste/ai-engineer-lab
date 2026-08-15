@@ -5,7 +5,7 @@ builder.Services.AddSingleton<TokenEstimator>();
 builder.Services.AddSingleton<ConversationSummarizer>();
 builder.Services.AddSingleton<ContextBuilder>();
 builder.Services.AddSingleton<IConversationStore, InMemoryConversationStore>();
-builder.Services.AddSingleton<SimpleEmbeddingService>();
+builder.Services.AddHttpClient<IEmbeddingService, OpenAiEmbeddingService>();
 builder.Services.AddSingleton<IRagRetriever, InMemoryRagRetriever>();
 
 var app = builder.Build();
@@ -21,10 +21,11 @@ app.MapPost("/api/chat/{conversationId}", async (
     IConversationStore conversationStore,
     IRagRetriever ragRetriever,
     ContextBuilder contextBuilder,
-    ILlmService llm) =>
+    ILlmService llm,
+    CancellationToken cancellationToken) =>
 {
     var history = conversationStore.GetHistory(conversationId);
-    var retrievalResults = ragRetriever.Search(request.Message);
+    var retrievalResults = await ragRetriever.SearchAsync(request.Message, cancellationToken: cancellationToken);
     var retrievedDocuments = retrievalResults.Select(result => result.Document).ToList();
     var context = contextBuilder.Build(request.Message, history, retrievedDocuments);
     var answer = await llm.GenerateAsync(context.Messages);

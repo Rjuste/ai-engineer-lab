@@ -1,6 +1,6 @@
 public class InMemoryRagRetriever : IRagRetriever
 {
-    private readonly SimpleEmbeddingService _embeddingService;
+    private readonly IEmbeddingService _embeddingService;
 
     private readonly List<RagDocument> _documents =
     [
@@ -10,23 +10,27 @@ public class InMemoryRagRetriever : IRagRetriever
         new("evals", "AI evaluations measure system quality using repeatable test cases and metrics such as correctness, groundedness, retrieval quality, latency, and cost.")
     ];
 
-    public InMemoryRagRetriever(SimpleEmbeddingService embeddingService)
+    public InMemoryRagRetriever(IEmbeddingService embeddingService)
     {
         _embeddingService = embeddingService;
     }
 
-    public IReadOnlyList<RagSearchResult> Search(string query, int topK = 2)
+    public async Task<IReadOnlyList<RagSearchResult>> SearchAsync(
+        string query,
+        int topK = 2,
+        CancellationToken cancellationToken = default)
     {
-        var queryVector = _embeddingService.Embed(query);
+        var queryVector = await _embeddingService.EmbedAsync(query, cancellationToken);
+        var results = new List<RagSearchResult>();
 
-        return _documents
-            .Select(document =>
-            {
-                var documentVector = _embeddingService.Embed(document.Content);
-                var score = CosineSimilarity(queryVector, documentVector);
-                return new RagSearchResult(document, score);
-            })
-            .Where(result => result.Score > 0)
+        foreach (var document in _documents)
+        {
+            var documentVector = await _embeddingService.EmbedAsync(document.Content, cancellationToken);
+            var score = CosineSimilarity(queryVector, documentVector);
+            results.Add(new RagSearchResult(document, score));
+        }
+
+        return results
             .OrderByDescending(result => result.Score)
             .Take(topK)
             .ToList();
@@ -34,6 +38,13 @@ public class InMemoryRagRetriever : IRagRetriever
 
     private static double CosineSimilarity(double[] left, double[] right)
     {
-        return left.Zip(right, (a, b) => a * b).Sum();
+        var dotProduct = left.Zip(right, (a, b) => a * b).Sum();
+        var leftMagnitude = Math.Sqrt(left.Sum(value => value * value));
+        var rightMagnitude = Math.Sqrt(right.Sum(value => value * value));
+
+        if (leftMagnitude == 0 || rightMagnitude == 0)
+            return 0;
+
+        return dotProduct / (leftMagnitude * rightMagnitude);
     }
 }
