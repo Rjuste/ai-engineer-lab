@@ -2,6 +2,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<ILlmService, MockLlmService>();
 builder.Services.AddSingleton<TokenEstimator>();
+builder.Services.AddSingleton<ConversationSummarizer>();
 builder.Services.AddSingleton<ContextBuilder>();
 builder.Services.AddSingleton<IConversationStore, InMemoryConversationStore>();
 
