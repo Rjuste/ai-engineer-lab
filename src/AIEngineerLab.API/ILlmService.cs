@@ -1,4 +1,4 @@
 public interface ILlmService
 {
-    Task<string> GenerateAsync(string message);
+    Task<string> GenerateAsync(IReadOnlyList<LlmMessage> context);
 }
