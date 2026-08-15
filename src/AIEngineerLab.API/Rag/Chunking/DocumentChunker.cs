@@ -1,33 +1,14 @@
-public class DocumentChunker
+public interface IRagRetriever
 {
-    private const int ChunkSizeWords = 18;
-    private const int OverlapWords = 4;
+    Task<IReadOnlyList<RagSearchResult>> SearchAsync(
+        string query,
+        int topK = 2,
+        CancellationToken cancellationToken = default);
 
-    public IReadOnlyList<RagDocument> Chunk(RagDocument document)
-    {
-        var words = document.Content
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        var chunks = new List<RagDocument>();
-        var step = ChunkSizeWords - OverlapWords;
-        var chunkIndex = 0;
-
-        for (var start = 0; start < words.Length; start += step)
-        {
-            var chunkWords = words.Skip(start).Take(ChunkSizeWords).ToArray();
-            if (chunkWords.Length == 0)
-                break;
-
-            chunks.Add(new RagDocument(
-                $"{document.Id}-chunk-{chunkIndex}",
-                string.Join(' ', chunkWords)));
-
-            chunkIndex++;
-
-            if (start + ChunkSizeWords >= words.Length)
-                break;
-        }
-
-        return chunks;
-    }
+    Task<IReadOnlyList<RagSearchResult>> SearchAsync(
+        string query,
+        int topK,
+        RagSearchFilter? filter,
+        double minimumSimilarity,
+        CancellationToken cancellationToken = default);
 }

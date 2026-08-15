@@ -11,12 +11,29 @@ public class InMemoryRagRetriever : IRagRetriever
         _vectorStore = vectorStore;
     }
 
-    public async Task<IReadOnlyList<RagSearchResult>> SearchAsync(
+    public Task<IReadOnlyList<RagSearchResult>> SearchAsync(
         string query,
         int topK = 2,
         CancellationToken cancellationToken = default)
+        => SearchAsync(
+            query,
+            topK,
+            filter: null,
+            minimumSimilarity: 0,
+            cancellationToken);
+
+    public async Task<IReadOnlyList<RagSearchResult>> SearchAsync(
+        string query,
+        int topK,
+        RagSearchFilter? filter,
+        double minimumSimilarity,
+        CancellationToken cancellationToken = default)
     {
         var queryVector = await _embeddingService.EmbedAsync(query, cancellationToken);
-        return _vectorStore.Search(queryVector, topK);
+        return _vectorStore.Search(
+            queryVector,
+            topK,
+            filter,
+            minimumSimilarity);
     }
 }

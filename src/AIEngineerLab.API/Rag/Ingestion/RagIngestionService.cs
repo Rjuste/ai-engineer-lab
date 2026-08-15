@@ -1,52 +1,34 @@
-public class RagIngestionService
+public class DocumentChunker
 {
-    private static readonly HashSet<string> TerminalStatuses =
-        new(StringComparer.OrdinalIgnoreCase)
+    private const int ChunkSizeWords = 18;
+    private const int OverlapWords = 4;
+
+    public IReadOnlyList<RagDocument> Chunk(RagDocument document)
+    {
+        var words = document.Content
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        var chunks = new List<RagDocument>();
+        var step = ChunkSizeWords - OverlapWords;
+        var chunkIndex = 0;
+
+        for (var start = 0; start < words.Length; start += step)
         {
-            "Indexed",
-            "DeadLettered"
-        };
+            var chunkWords = words.Skip(start).Take(ChunkSizeWords).ToArray();
+            if (chunkWords.Length == 0)
+                break;
 
-    private readonly RagIngestionQueue _queue;
-    private readonly RagIngestionStatusStore _statusStore;
+            chunks.Add(new RagDocument(
+                $"{document.Id}-chunk-{chunkIndex}",
+                string.Join(' ', chunkWords),
+                document.Metadata));
 
-    private readonly List<RagDocument> _documents =
-    [
-        new("rag", "RAG stands for Retrieval-Augmented Generation. It retrieves relevant external information and adds it to the LLM context before generation."),
-        new("embeddings", "Embeddings convert text into numeric vectors so semantically similar text can be compared using vector similarity."),
-        new("chunking", "Chunking splits large documents into smaller passages that can be embedded, retrieved, and placed into an LLM context window."),
-        new("evals", "AI evaluations measure system quality using repeatable test cases and metrics such as correctness, groundedness, retrieval quality, latency, and cost.")
-    ];
+            chunkIndex++;
 
-    public RagIngestionService(
-        RagIngestionQueue queue,
-        RagIngestionStatusStore statusStore)
-    {
-        _queue = queue;
-        _statusStore = statusStore;
-    }
+            if (start + ChunkSizeWords >= words.Length)
+                break;
+        }
 
-    public async Task SeedAsync(CancellationToken cancellationToken = default)
-    {
-        foreach (var document in _documents)
-            await QueueAsync(document, 1, cancellationToken);
-    }
-
-    public async Task<bool> QueueAsync(
-        RagDocument document,
-        int version = 1,
-        CancellationToken cancellationToken = default)
-    {
-        var job = new RagIngestionJob(document, version);
-        var existingStatus = _statusStore.Get(job.IdempotencyKey);
-
-        // Any existing lifecycle record means this logical operation has already
-        // been accepted. Terminal failures require an explicit redrive operation.
-        if (existingStatus is not null)
-            return false;
-
-        _statusStore.Set(job.IdempotencyKey, "Queued");
-        await _queue.EnqueueAsync(job, cancellationToken);
-        return true;
+        return chunks;
     }
 }

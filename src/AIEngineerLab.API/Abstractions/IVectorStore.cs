@@ -1,6 +1,8 @@
-public interface IVectorStore
-{
-    int Count { get; }
-    void Add(RagDocument document, double[] embedding);
-    IReadOnlyList<RagSearchResult> Search(double[] queryEmbedding, int topK);
-}
+public sealed record RagSearchRequest(
+    string Query,
+    int TopK = 5,
+    double MinimumSimilarity = 0,
+    string? TenantId = null,
+    string? Country = null,
+    int? Year = null,
+    string? Department = null);
