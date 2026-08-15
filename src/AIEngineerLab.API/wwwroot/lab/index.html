@@ -51,6 +51,7 @@
             background: #17202a;
             color: white;
             font-weight: 600;
+            cursor: pointer;
         }
 
         .secondary {
@@ -64,24 +65,101 @@
             gap: 12px;
         }
 
-        pre {
-            white-space: pre-wrap;
-            word-break: break-word;
-            background: #f3f4f6;
-            padding: 12px;
-            border-radius: 8px;
-            max-height: 350px;
-            overflow: auto;
-        }
-
         .muted {
             color: #68707a;
             font-size: 14px;
         }
 
+        .json-viewer {
+            margin-top: 8px;
+            background: #0d1117;
+            color: #c9d1d9;
+            border: 1px solid #30363d;
+            border-radius: 10px;
+            padding: 14px;
+            max-height: 420px;
+            overflow: auto;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 13px;
+            line-height: 1.55;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .json-row {
+            margin-left: 16px;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+
+        .json-key {
+            color: #79c0ff;
+        }
+
+        .json-string {
+            color: #a5d6ff;
+        }
+
+        .json-number {
+            color: #d2a8ff;
+        }
+
+        .json-boolean {
+            color: #ff7b72;
+        }
+
+        .json-null {
+            color: #8b949e;
+            font-style: italic;
+        }
+
+        .json-bracket,
+        .json-comma {
+            color: #8b949e;
+        }
+
+        .json-summary {
+            cursor: pointer;
+            user-select: none;
+            color: #c9d1d9;
+        }
+
+        .json-summary::marker {
+            color: #8b949e;
+        }
+
+        .json-count {
+            color: #8b949e;
+            font-size: 12px;
+        }
+
+        .json-empty {
+            color: #8b949e;
+        }
+
+        .viewer-toolbar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .viewer-toolbar button {
+            width: auto;
+            margin: 0;
+            padding: 7px 10px;
+            background: #21262d;
+            border-color: #30363d;
+            color: #c9d1d9;
+            font-size: 12px;
+        }
+
         @media (max-width: 650px) {
             .grid {
                 grid-template-columns: 1fr;
+            }
+
+            .json-viewer {
+                font-size: 12px;
+                max-height: 360px;
             }
         }
     </style>
@@ -92,7 +170,6 @@
         <h1>AI Engineer Lab</h1>
         <p class="muted">Run the agent and inspect each layer.</p>
 
-        <!-- Agent tester -->
         <div class="card">
             <h2>Agent</h2>
 
@@ -106,32 +183,32 @@
             <p id="status" class="muted"></p>
         </div>
 
-        <!-- Final answer -->
         <div class="card">
             <h2>Final answer</h2>
             <div id="answer">—</div>
         </div>
 
-        <!-- Agent diagnostics -->
         <div class="grid">
             <div class="card">
                 <h2>Agent / tool trace</h2>
-                <pre id="trace">—</pre>
+                <div id="trace" class="json-viewer">—</div>
             </div>
 
             <div class="card">
                 <h2>Token usage</h2>
-                <pre id="usage">—</pre>
+                <div id="usage" class="json-viewer">—</div>
             </div>
         </div>
 
-        <!-- Full API response -->
         <div class="card">
             <h2>Full response</h2>
-            <pre id="raw">—</pre>
+            <div class="viewer-toolbar">
+                <button type="button" onclick="expandAll('raw')">Expand all</button>
+                <button type="button" onclick="collapseAll('raw')">Collapse all</button>
+            </div>
+            <div id="raw" class="json-viewer">—</div>
         </div>
 
-        <!-- RAG ingestion tester -->
         <div class="card">
             <h2>RAG ingestion tester</h2>
 
@@ -151,30 +228,159 @@
 
             <button id="ingest">Queue document</button>
             <p id="ingestStatus" class="muted"></p>
-            <pre id="ingestResult">—</pre>
+            <div id="ingestResult" class="json-viewer">—</div>
         </div>
 
-        <!-- RAG diagnostics -->
         <div class="grid">
             <div class="card">
                 <h2>RAG status</h2>
                 <button class="secondary" id="ragStatus">Refresh RAG status</button>
-                <pre id="rag">—</pre>
+                <div id="rag" class="json-viewer">—</div>
             </div>
 
             <div class="card">
                 <h2>Dead letters</h2>
                 <button class="secondary" id="deadletters">Refresh dead letters</button>
-                <pre id="dead">—</pre>
+                <div id="dead" class="json-viewer">—</div>
             </div>
         </div>
     </div>
 
     <script>
         const $ = id => document.getElementById(id);
-        const pretty = value => JSON.stringify(value, null, 2);
 
-        // Run the agent.
+        function primitiveNode(value) {
+            const span = document.createElement("span");
+
+            if (value === null) {
+                span.className = "json-null";
+                span.textContent = "null";
+                return span;
+            }
+
+            if (typeof value === "string") {
+                span.className = "json-string";
+                span.textContent = JSON.stringify(value);
+                return span;
+            }
+
+            if (typeof value === "number") {
+                span.className = "json-number";
+                span.textContent = String(value);
+                return span;
+            }
+
+            if (typeof value === "boolean") {
+                span.className = "json-boolean";
+                span.textContent = String(value);
+                return span;
+            }
+
+            span.textContent = String(value);
+            return span;
+        }
+
+        function jsonNode(value, key = null, depth = 0) {
+            const row = document.createElement("div");
+            row.className = "json-row";
+
+            if (key !== null) {
+                const keySpan = document.createElement("span");
+                keySpan.className = "json-key";
+                keySpan.textContent = JSON.stringify(String(key));
+                row.appendChild(keySpan);
+                row.append(": ");
+            }
+
+            if (value === null || typeof value !== "object") {
+                row.appendChild(primitiveNode(value));
+                return row;
+            }
+
+            const isArray = Array.isArray(value);
+            const entries = isArray
+                ? value.map((item, index) => [index, item])
+                : Object.entries(value);
+
+            if (entries.length === 0) {
+                const empty = document.createElement("span");
+                empty.className = "json-empty";
+                empty.textContent = isArray ? "[]" : "{}";
+                row.appendChild(empty);
+                return row;
+            }
+
+            const details = document.createElement("details");
+            details.open = depth < 2;
+
+            const summary = document.createElement("summary");
+            summary.className = "json-summary";
+
+            const openBracket = document.createElement("span");
+            openBracket.className = "json-bracket";
+            openBracket.textContent = isArray ? "[" : "{";
+            summary.appendChild(openBracket);
+
+            const count = document.createElement("span");
+            count.className = "json-count";
+            count.textContent = ` ${entries.length} ${isArray ? "items" : "fields"} `;
+            summary.appendChild(count);
+
+            const closeBracket = document.createElement("span");
+            closeBracket.className = "json-bracket";
+            closeBracket.textContent = isArray ? "]" : "}";
+            summary.appendChild(closeBracket);
+
+            details.appendChild(summary);
+
+            for (const [childKey, childValue] of entries) {
+                const child = jsonNode(
+                    childValue,
+                    isArray ? null : childKey,
+                    depth + 1
+                );
+
+                if (isArray) {
+                    const index = document.createElement("span");
+                    index.className = "json-key";
+                    index.textContent = `${childKey}: `;
+                    child.prepend(index);
+                }
+
+                details.appendChild(child);
+            }
+
+            row.appendChild(details);
+            return row;
+        }
+
+        function renderJson(id, value) {
+            const target = $(id);
+            target.replaceChildren();
+            target.appendChild(jsonNode(value));
+        }
+
+        function renderText(id, text) {
+            const target = $(id);
+            target.replaceChildren();
+            const span = document.createElement("span");
+            span.className = "json-string";
+            span.textContent = text;
+            target.appendChild(span);
+        }
+
+        function expandAll(id) {
+            $(id).querySelectorAll("details").forEach(item => {
+                item.open = true;
+            });
+        }
+
+        function collapseAll(id) {
+            $(id).querySelectorAll("details").forEach(item => {
+                item.open = false;
+            });
+        }
+
         $("send").onclick = async () => {
             try {
                 $("status").textContent = "Running…";
@@ -199,26 +405,27 @@
                 const result = await response.json();
 
                 if (!response.ok) {
-                    throw new Error(pretty(result));
+                    throw new Error(JSON.stringify(result, null, 2));
                 }
 
                 $("answer").textContent = result.answer ?? "No final answer";
-                $("trace").textContent = pretty(
-                    result.agentSteps ?? "No trace returned"
+                renderJson(
+                    "trace",
+                    result.agentSteps ?? { message: "No trace returned" }
                 );
-                $("usage").textContent = pretty(
-                    result.llmUsage ?? "No usage returned"
+                renderJson(
+                    "usage",
+                    result.llmUsage ?? { message: "No usage returned" }
                 );
-                $("raw").textContent = pretty(result);
+                renderJson("raw", result);
                 $("status").textContent = "Complete";
             }
             catch (error) {
                 $("status").textContent = "Error";
-                $("raw").textContent = error.message;
+                renderText("raw", error.message);
             }
         };
 
-        // Queue a document for background RAG ingestion.
         $("ingest").onclick = async () => {
             try {
                 $("ingestStatus").textContent = "Queued…";
@@ -242,7 +449,7 @@
                 );
 
                 const result = await response.json();
-                $("ingestResult").textContent = pretty(result);
+                renderJson("ingestResult", result);
 
                 $("ingestStatus").textContent = response.ok
                     ? "Submitted. Wait about 5 seconds, then refresh RAG status and dead letters."
@@ -250,22 +457,20 @@
             }
             catch (error) {
                 $("ingestStatus").textContent = "Error";
-                $("ingestResult").textContent = error.message;
+                renderText("ingestResult", error.message);
             }
         };
 
-        // Inspect current ingestion state.
         $("ragStatus").onclick = async () => {
             const response = await fetch("/api/rag/status");
             const result = await response.json();
-            $("rag").textContent = pretty(result);
+            renderJson("rag", result);
         };
 
-        // Inspect jobs that exhausted their retries.
         $("deadletters").onclick = async () => {
             const response = await fetch("/api/rag/deadletters");
             const result = await response.json();
-            $("dead").textContent = pretty(result);
+            renderJson("dead", result);
         };
     </script>
 </body>
