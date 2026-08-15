@@ -8,17 +8,46 @@ builder.Services.AddSingleton<IConversationStore, InMemoryConversationStore>();
 builder.Services.AddHttpClient<IEmbeddingService, OpenAiEmbeddingService>();
 builder.Services.AddSingleton<DocumentChunker>();
 builder.Services.AddSingleton<IVectorStore, InMemoryVectorStore>();
+builder.Services.AddSingleton<RagIngestionQueue>();
+builder.Services.AddSingleton<RagIngestionStatusStore>();
 builder.Services.AddSingleton<RagIngestionService>();
+builder.Services.AddHostedService<RagIngestionWorker>();
 builder.Services.AddSingleton<IRagRetriever, InMemoryRagRetriever>();
 
 var app = builder.Build();
 
 var ingestionService = app.Services.GetRequiredService<RagIngestionService>();
-await ingestionService.IngestAsync();
+await ingestionService.SeedAsync();
 
 app.MapGet("/", () =>
 {
     return "AI Engineer Lab is running!";
+});
+
+app.MapGet("/api/rag/status", (
+    RagIngestionStatusStore statusStore,
+    IVectorStore vectorStore) =>
+{
+    return Results.Ok(new
+    {
+        vectorCount = vectorStore.Count,
+        documents = statusStore.GetAll()
+    });
+});
+
+app.MapPost("/api/rag/documents", async (
+    RagDocument document,
+    RagIngestionService ingestion,
+    CancellationToken cancellationToken) =>
+{
+    await ingestion.QueueAsync(document, cancellationToken);
+
+    return Results.Accepted(
+        value: new
+        {
+            document.Id,
+            status = "Queued"
+        });
 });
 
 app.MapPost("/api/chat/{conversationId}", async (

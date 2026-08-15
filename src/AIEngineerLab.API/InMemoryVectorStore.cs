@@ -1,17 +1,37 @@
 public class InMemoryVectorStore : IVectorStore
 {
+    private readonly object _sync = new();
     private readonly List<(RagDocument Document, double[] Embedding)> _items = [];
 
-    public int Count => _items.Count;
+    public int Count
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _items.Count;
+            }
+        }
+    }
 
     public void Add(RagDocument document, double[] embedding)
     {
-        _items.Add((document, embedding));
+        lock (_sync)
+        {
+            _items.Add((document, embedding));
+        }
     }
 
     public IReadOnlyList<RagSearchResult> Search(double[] queryEmbedding, int topK)
     {
-        return _items
+        List<(RagDocument Document, double[] Embedding)> snapshot;
+
+        lock (_sync)
+        {
+            snapshot = _items.ToList();
+        }
+
+        return snapshot
             .Select(item => new RagSearchResult(
                 item.Document,
                 CosineSimilarity(queryEmbedding, item.Embedding)))

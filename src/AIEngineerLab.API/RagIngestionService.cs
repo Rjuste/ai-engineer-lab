@@ -1,10 +1,9 @@
 public class RagIngestionService
 {
-    private readonly IEmbeddingService _embeddingService;
-    private readonly IVectorStore _vectorStore;
-    private readonly DocumentChunker _chunker;
+    private readonly RagIngestionQueue _queue;
+    private readonly RagIngestionStatusStore _statusStore;
 
-    private readonly List<RagDocument> _documents =
+    private readonly List<RagDocument> _seedDocuments =
     [
         new("rag", "RAG stands for Retrieval-Augmented Generation. It retrieves relevant external information and adds it to the LLM context before generation."),
         new("embeddings", "Embeddings convert text into numeric vectors so semantically similar text can be compared using vector similarity."),
@@ -13,27 +12,26 @@ public class RagIngestionService
     ];
 
     public RagIngestionService(
-        IEmbeddingService embeddingService,
-        IVectorStore vectorStore,
-        DocumentChunker chunker)
+        RagIngestionQueue queue,
+        RagIngestionStatusStore statusStore)
     {
-        _embeddingService = embeddingService;
-        _vectorStore = vectorStore;
-        _chunker = chunker;
+        _queue = queue;
+        _statusStore = statusStore;
     }
 
-    public async Task IngestAsync(CancellationToken cancellationToken = default)
+    public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
-        if (_vectorStore.Count > 0)
-            return;
-
-        foreach (var document in _documents)
+        foreach (var document in _seedDocuments)
         {
-            foreach (var chunk in _chunker.Chunk(document))
-            {
-                var embedding = await _embeddingService.EmbedAsync(chunk.Content, cancellationToken);
-                _vectorStore.Add(chunk, embedding);
-            }
+            await QueueAsync(document, cancellationToken);
         }
+    }
+
+    public async Task QueueAsync(
+        RagDocument document,
+        CancellationToken cancellationToken = default)
+    {
+        _statusStore.Set(document.Id, "Queued");
+        await _queue.EnqueueAsync(document, cancellationToken);
     }
 }
