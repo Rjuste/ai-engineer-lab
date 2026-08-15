@@ -8,7 +8,8 @@ public sealed record RetrievalEvalCase(
     string Category,
     string? PreviousUserMessage = null,
     string? PreviousAssistantMessage = null,
-    bool RewriteQuery = false);
+    bool RewriteQuery = false,
+    IReadOnlyList<string>? ForbiddenDocumentPrefixes = null);
 
 public sealed record RetrievalEvalCaseResult(
     string Id,
@@ -16,11 +17,26 @@ public sealed record RetrievalEvalCaseResult(
     string Question,
     IReadOnlyList<string> ExpectedDocumentPrefixes,
     IReadOnlyList<string> RetrievedDocumentIds,
+    IReadOnlyList<string> MatchedExpectedDocumentPrefixes,
+    IReadOnlyList<string> ForbiddenRetrievedDocumentIds,
+    bool HitAtK,
     double RecallAtK,
     double PrecisionAtK,
+    int? FirstRelevantRank,
     double ReciprocalRank,
     long LatencyMs,
-    bool Passed);
+    bool Passed,
+    IReadOnlyList<string> Violations);
+
+public sealed record RetrievalEvalCategorySummary(
+    string Category,
+    int TotalCases,
+    int PassedCases,
+    double PassRate,
+    double MeanRecallAtK,
+    double MeanPrecisionAtK,
+    double Mrr,
+    double AverageLatencyMs);
 
 public sealed record RetrievalEvalReport(
     DateTimeOffset RunAtUtc,
@@ -28,10 +44,12 @@ public sealed record RetrievalEvalReport(
     int TotalCases,
     int PassedCases,
     double PassRate,
+    double HitRateAtK,
     double MeanRecallAtK,
     double MeanPrecisionAtK,
     double Mrr,
     double AverageLatencyMs,
+    IReadOnlyList<RetrievalEvalCategorySummary> Categories,
     IReadOnlyList<RetrievalEvalCaseResult> Cases);
 
 public sealed class RetrievalEvalHarness
@@ -68,13 +86,15 @@ public sealed class RetrievalEvalHarness
             "How many PTO days can US employees carry over under the current policy?",
             ["pto-us-2026"],
             new RagSearchFilter("tenant-123", "US", 2026, "HR"),
-            "stale-document-trap"),
+            "stale-document-trap",
+            ForbiddenDocumentPrefixes: ["pto-us-2024"]),
         new(
             "cross-tenant-security",
             "How much PTO do employees receive?",
             ["pto-us-2026"],
             new RagSearchFilter("tenant-123", "US", 2026, "HR"),
-            "authorization-boundary"),
+            "authorization-boundary",
+            ForbiddenDocumentPrefixes: ["pto-other-tenant"]),
         new(
             "contextual-payment-failure",
             "What happens if it doesn't go through?",
@@ -93,6 +113,8 @@ public sealed class RetrievalEvalHarness
 
         foreach (var testCase in GoldenDataset)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var stopwatch = Stopwatch.StartNew();
             var search = await _pipeline.SearchAsync(
                 new AdvancedRagSearchRequest(
@@ -116,10 +138,17 @@ public sealed class RetrievalEvalHarness
                 .Select(result => result.Document.Id)
                 .ToList();
 
+            // Recall is document-level: one expected source may produce multiple chunks,
+            // but retrieving two chunks from that source must not count as two expected hits.
+            var matchedExpectedPrefixes = testCase.ExpectedDocumentPrefixes
+                .Where(prefix => retrievedIds.Any(id => MatchesPrefix(id, prefix)))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
             var relevantRetrieved = retrievedIds.Count(id => IsRelevant(id, testCase.ExpectedDocumentPrefixes));
             var recall = testCase.ExpectedDocumentPrefixes.Count == 0
                 ? 1
-                : (double)relevantRetrieved / testCase.ExpectedDocumentPrefixes.Count;
+                : (double)matchedExpectedPrefixes.Count / testCase.ExpectedDocumentPrefixes.Count;
             var precision = retrievedIds.Count == 0
                 ? 0
                 : (double)relevantRetrieved / retrievedIds.Count;
@@ -129,34 +158,78 @@ public sealed class RetrievalEvalHarness
                 .FirstOrDefault(item => IsRelevant(item.id, testCase.ExpectedDocumentPrefixes))?.rank;
             var reciprocalRank = firstRelevantRank.HasValue ? 1.0 / firstRelevantRank.Value : 0;
 
+            var forbiddenPrefixes = testCase.ForbiddenDocumentPrefixes ?? Array.Empty<string>();
+            var forbiddenRetrieved = retrievedIds
+                .Where(id => IsRelevant(id, forbiddenPrefixes))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var violations = new List<string>();
+            if (recall < 1)
+            {
+                var missing = testCase.ExpectedDocumentPrefixes
+                    .Where(prefix => !matchedExpectedPrefixes.Contains(prefix, StringComparer.OrdinalIgnoreCase));
+                violations.Add($"Missing expected source(s): {string.Join(", ", missing)}");
+            }
+
+            if (forbiddenRetrieved.Count > 0)
+                violations.Add($"Retrieved forbidden source(s): {string.Join(", ", forbiddenRetrieved)}");
+
             results.Add(new RetrievalEvalCaseResult(
                 testCase.Id,
                 testCase.Category,
                 testCase.Question,
                 testCase.ExpectedDocumentPrefixes,
                 retrievedIds,
+                matchedExpectedPrefixes,
+                forbiddenRetrieved,
+                firstRelevantRank.HasValue,
                 recall,
                 precision,
+                firstRelevantRank,
                 reciprocalRank,
                 stopwatch.ElapsedMilliseconds,
-                recall >= 1));
+                violations.Count == 0,
+                violations));
         }
+
+        var categories = results
+            .GroupBy(result => result.Category, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new RetrievalEvalCategorySummary(
+                group.Key,
+                group.Count(),
+                group.Count(result => result.Passed),
+                Ratio(group.Count(result => result.Passed), group.Count()),
+                Average(group.Select(result => result.RecallAtK)),
+                Average(group.Select(result => result.PrecisionAtK)),
+                Average(group.Select(result => result.ReciprocalRank)),
+                Average(group.Select(result => (double)result.LatencyMs))))
+            .ToList();
 
         return new RetrievalEvalReport(
             DateTimeOffset.UtcNow,
             k,
             results.Count,
             results.Count(result => result.Passed),
-            results.Count == 0 ? 0 : (double)results.Count(result => result.Passed) / results.Count,
+            Ratio(results.Count(result => result.Passed), results.Count),
+            Ratio(results.Count(result => result.HitAtK), results.Count),
             Average(results.Select(result => result.RecallAtK)),
             Average(results.Select(result => result.PrecisionAtK)),
             Average(results.Select(result => result.ReciprocalRank)),
             Average(results.Select(result => (double)result.LatencyMs)),
+            categories,
             results);
     }
 
-    private static bool IsRelevant(string documentId, IReadOnlyList<string> expectedPrefixes) =>
-        expectedPrefixes.Any(prefix => documentId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+    private static bool IsRelevant(string documentId, IReadOnlyList<string> prefixes) =>
+        prefixes.Any(prefix => MatchesPrefix(documentId, prefix));
+
+    private static bool MatchesPrefix(string documentId, string prefix) =>
+        documentId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+
+    private static double Ratio(int numerator, int denominator) =>
+        denominator == 0 ? 0 : (double)numerator / denominator;
 
     private static double Average(IEnumerable<double> values)
     {
