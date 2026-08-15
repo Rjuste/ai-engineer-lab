@@ -26,23 +26,13 @@ builder.Services.AddSingleton(new AgentExecutionPolicy());
 builder.Services.AddSingleton<AgentOrchestrator>();
 
 var app = builder.Build();
-
 app.UseDefaultFiles();
 app.UseStaticFiles();
-
 var ingestionService = app.Services.GetRequiredService<RagIngestionService>();
 await ingestionService.SeedAsync();
-
 app.MapGet("/", () => Results.Redirect("/lab/"));
-
 app.MapGet("/api/agent/policy", (AgentExecutionPolicy policy) => Results.Ok(policy));
-
-app.MapGet("/api/rag/status", (RagIngestionStatusStore statusStore, IVectorStore vectorStore) => Results.Ok(new
-{
-    vectorCount = vectorStore.Count,
-    documents = statusStore.GetAll()
-}));
-
+app.MapGet("/api/rag/status", (RagIngestionStatusStore statusStore, IVectorStore vectorStore) => Results.Ok(new { vectorCount = vectorStore.Count, documents = statusStore.GetAll() }));
 app.MapGet("/api/rag/deadletters", (DeadLetterStore deadLetters) => Results.Ok(deadLetters.GetAll()));
 
 app.MapPost("/api/rag/search", async (RagSearchRequest request, IRagRetriever retriever, IVectorStore vectorStore, CancellationToken cancellationToken) =>
@@ -52,18 +42,7 @@ app.MapPost("/api/rag/search", async (RagSearchRequest request, IRagRetriever re
     var topK = Math.Clamp(request.TopK, 1, 50);
     var minimumSimilarity = Math.Clamp(request.MinimumSimilarity, -1, 1);
     var results = await retriever.SearchAsync(request.Query, topK, filter, minimumSimilarity, cancellationToken);
-    return Results.Ok(new
-    {
-        query = request.Query,
-        totalVectorCount = vectorStore.Count,
-        eligibleVectorCount = vectorStore.CountEligible(filter),
-        returnedCount = results.Count,
-        filter,
-        minimumSimilarity,
-        topK,
-        note = "Metadata filtering is applied before similarity scoring. Tenant/user authorization must come from trusted backend identity in production.",
-        results = results.Select(result => new { documentId = result.Document.Id, content = result.Document.Content, metadata = result.Document.Metadata, similarity = result.Score })
-    });
+    return Results.Ok(new { query = request.Query, totalVectorCount = vectorStore.Count, eligibleVectorCount = vectorStore.CountEligible(filter), returnedCount = results.Count, filter, minimumSimilarity, topK, note = "Metadata filtering is applied before similarity scoring. Tenant/user authorization must come from trusted backend identity in production.", results = results.Select(result => new { documentId = result.Document.Id, content = result.Document.Content, metadata = result.Document.Metadata, similarity = result.Score }) });
 });
 
 app.MapPost("/api/rag/advanced-search", async (AdvancedRagSearchRequest request, AdvancedRagPipeline pipeline, CancellationToken cancellationToken) =>
@@ -91,11 +70,10 @@ app.MapPost("/api/rag/advanced-search", async (AdvancedRagSearchRequest request,
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
 });
 
-// Phase 19: deterministic offline retrieval evaluation against a curated golden dataset.
 app.MapGet("/api/evals/retrieval/cases", (RetrievalEvalHarness harness) => Results.Ok(harness.GoldenDataset));
-app.MapPost("/api/evals/retrieval/run", async (int? k, RetrievalEvalHarness harness, CancellationToken cancellationToken) =>
+app.MapPost("/api/evals/retrieval/run", async (int? k, int? runs, RetrievalEvalHarness harness, CancellationToken cancellationToken) =>
 {
-    var report = await harness.RunAsync(k ?? 5, cancellationToken);
+    var report = await harness.RunAsync(k ?? 5, runs ?? 1, cancellationToken);
     return Results.Ok(report);
 });
 
