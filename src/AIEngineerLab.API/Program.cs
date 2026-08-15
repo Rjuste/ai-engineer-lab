@@ -1,6 +1,7 @@
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<ILlmService, MockLlmService>();
+builder.Services.AddSingleton<ContextBuilder>();
 
 var app = builder.Build();
 
@@ -9,13 +10,15 @@ app.MapGet("/", () =>
     return "AI Engineer Lab is running!";
 });
 
-app.MapPost("/api/chat", async (ChatRequest request, ILlmService llm) =>
+app.MapPost("/api/chat", async (ChatRequest request, ContextBuilder contextBuilder, ILlmService llm) =>
 {
-    var answer = await llm.GenerateAsync(request.Message);
+    var context = contextBuilder.Build(request.Message);
+    var answer = await llm.GenerateAsync(context);
 
     return Results.Ok(new
     {
-        answer
+        answer,
+        context
     });
 });
 
