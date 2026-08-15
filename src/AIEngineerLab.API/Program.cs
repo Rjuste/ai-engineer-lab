@@ -14,6 +14,7 @@ builder.Services.AddSingleton<DeadLetterStore>();
 builder.Services.AddSingleton<RagIngestionService>();
 builder.Services.AddHostedService<RagIngestionWorker>();
 builder.Services.AddSingleton<IRagRetriever, InMemoryRagRetriever>();
+builder.Services.AddSingleton<AdvancedRagPipeline>();
 
 builder.Services.AddSingleton<IAgentTool, KnowledgeBaseSearchTool>();
 builder.Services.AddSingleton<IAgentTool, RagStatusTool>();
@@ -45,6 +46,7 @@ app.MapGet("/api/rag/status", (
 
 app.MapGet("/api/rag/deadletters", (DeadLetterStore deadLetters) => Results.Ok(deadLetters.GetAll()));
 
+// Phase 18 baseline search: metadata filtering + vector similarity.
 app.MapPost("/api/rag/search", async (
     RagSearchRequest request,
     IRagRetriever retriever,
@@ -79,7 +81,7 @@ app.MapPost("/api/rag/search", async (
         filter,
         minimumSimilarity,
         topK,
-        note = "Metadata filtering is applied before similarity scoring. In production, tenant/user authorization filters must come from trusted backend identity, not LLM-generated arguments.",
+        note = "Metadata filtering is applied before similarity scoring. Tenant/user authorization must come from trusted backend identity in production.",
         results = results.Select(result => new
         {
             documentId = result.Document.Id,
@@ -88,6 +90,95 @@ app.MapPost("/api/rag/search", async (
             similarity = result.Score
         })
     });
+});
+
+// Phase 18 advanced search: rewrite -> metadata scope -> vector + keyword -> RRF -> rerank -> cutoff.
+app.MapPost("/api/rag/advanced-search", async (
+    AdvancedRagSearchRequest request,
+    AdvancedRagPipeline pipeline,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Query))
+        return Results.BadRequest(new { error = "Query is required." });
+
+    try
+    {
+        var result = await pipeline.SearchAsync(request, cancellationToken);
+        return Results.Ok(new
+        {
+            result.OriginalQuery,
+            result.SearchQuery,
+            result.QueryWasRewritten,
+            rewriteUsage = new
+            {
+                inputTokens = result.RewriteInputTokens,
+                outputTokens = result.RewriteOutputTokens,
+                totalTokens = result.RewriteInputTokens + result.RewriteOutputTokens
+            },
+            result.Filter,
+            result.TotalVectorCount,
+            result.EligibleVectorCount,
+            settings = new
+            {
+                result.CandidateTopK,
+                result.FinalTopK,
+                result.MinimumVectorSimilarity,
+                result.MinimumRerankScore
+            },
+            stages = new
+            {
+                vector = result.VectorResults.Select((item, index) => new
+                {
+                    rank = index + 1,
+                    documentId = item.Document.Id,
+                    similarity = item.Score,
+                    metadata = item.Document.Metadata,
+                    content = item.Document.Content
+                }),
+                keyword = result.KeywordResults.Select((item, index) => new
+                {
+                    rank = index + 1,
+                    documentId = item.Document.Id,
+                    keywordScore = item.Score,
+                    metadata = item.Document.Metadata,
+                    content = item.Document.Content
+                }),
+                fusedAndReranked = result.FusedCandidates.Select((item, index) => new
+                {
+                    rank = index + 1,
+                    documentId = item.Document.Id,
+                    item.VectorRank,
+                    item.VectorScore,
+                    item.KeywordRank,
+                    item.KeywordScore,
+                    item.RrfScore,
+                    item.RerankScore,
+                    metadata = item.Document.Metadata,
+                    content = item.Document.Content
+                }),
+                finalContext = result.FinalResults.Select((item, index) => new
+                {
+                    rank = index + 1,
+                    documentId = item.Document.Id,
+                    item.RerankScore,
+                    item.RrfScore,
+                    metadata = item.Document.Metadata,
+                    content = item.Document.Content
+                })
+            },
+            notes = new[]
+            {
+                "Metadata filters run before retrieval; authorization scope must be backend-controlled in production.",
+                "Vector and keyword raw scores are not compared directly; RRF combines their ranks.",
+                "The lab reranker is deterministic and observable. Replace it with a dedicated reranking/cross-encoder model for production quality.",
+                "Only candidates above MinimumRerankScore and within FinalTopK enter final context."
+            }
+        });
+    }
+    catch (ArgumentException exception)
+    {
+        return Results.BadRequest(new { error = exception.Message });
+    }
 });
 
 app.MapPost("/api/rag/documents", async (
