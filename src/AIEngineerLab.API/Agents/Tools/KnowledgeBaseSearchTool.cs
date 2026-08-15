@@ -2,22 +2,19 @@ using System.Text.Json;
 
 public sealed class KnowledgeBaseSearchTool : IAgentTool
 {
-    private static readonly RagSearchFilter TrustedScope =
-        new("tenant-123", "US", 2026, null);
+    private readonly AdvancedRagPipeline _pipeline;
 
-    private readonly IRagRetriever _ragRetriever;
-
-    public KnowledgeBaseSearchTool(IRagRetriever ragRetriever)
+    public KnowledgeBaseSearchTool(AdvancedRagPipeline pipeline)
     {
-        _ragRetriever = ragRetriever;
+        _pipeline = pipeline;
     }
 
     public string Name => "search_knowledge_base";
 
     public string Description =>
-        "Search the internal AI engineering knowledge base for grounded information. " +
+        "Search the authorized internal knowledge base using metadata filtering, hybrid semantic/keyword retrieval, fusion, and reranking. " +
         "Use this when the user's question depends on indexed internal documentation. " +
-        "Authorization metadata is enforced by the backend and is not supplied by the model.";
+        "Authorization metadata is enforced by the backend and is never supplied by the model.";
 
     public object Parameters => new
     {
@@ -27,7 +24,7 @@ public sealed class KnowledgeBaseSearchTool : IAgentTool
             query = new
             {
                 type = "string",
-                description = "A concise semantic search query for the internal knowledge base."
+                description = "A concise standalone search query for the internal knowledge base."
             }
         },
         required = new[] { "query" },
@@ -48,19 +45,38 @@ public sealed class KnowledgeBaseSearchTool : IAgentTool
         if (string.IsNullOrWhiteSpace(query))
             throw new ArgumentException("Tool argument 'query' cannot be empty.");
 
-        var results = await _ragRetriever.SearchAsync(
-            query,
-            topK: 3,
-            filter: TrustedScope,
-            minimumSimilarity: 0,
+        // The orchestrating LLM already supplied a standalone tool query, so the tool
+        // skips a second LLM rewrite and goes directly into the retrieval funnel.
+        var result = await _pipeline.SearchAsync(
+            new AdvancedRagSearchRequest(
+                Query: query,
+                RewriteQuery: false,
+                CandidateTopK: 20,
+                FinalTopK: 3,
+                MinimumVectorSimilarity: 0,
+                MinimumRerankScore: 0.35,
+                TenantId: "tenant-123",
+                Country: "US",
+                Year: 2026),
             cancellationToken);
 
-        return JsonSerializer.Serialize(results.Select(result => new
+        return JsonSerializer.Serialize(new
         {
-            documentId = result.Document.Id,
-            content = result.Document.Content,
-            metadata = result.Document.Metadata,
-            score = result.Score
-        }));
+            searchQuery = result.SearchQuery,
+            eligibleVectorCount = result.EligibleVectorCount,
+            vectorCandidateCount = result.VectorResults.Count,
+            keywordCandidateCount = result.KeywordResults.Count,
+            fusedCandidateCount = result.FusedCandidates.Count,
+            results = result.FinalResults.Select(candidate => new
+            {
+                documentId = candidate.Document.Id,
+                content = candidate.Document.Content,
+                metadata = candidate.Document.Metadata,
+                candidate.RerankScore,
+                candidate.RrfScore,
+                candidate.VectorScore,
+                candidate.KeywordScore
+            })
+        });
     }
 }
