@@ -18,6 +18,7 @@ builder.Services.AddSingleton<IRagRetriever, InMemoryRagRetriever>();
 builder.Services.AddSingleton<IAgentTool, KnowledgeBaseSearchTool>();
 builder.Services.AddSingleton<IAgentTool, RagStatusTool>();
 builder.Services.AddSingleton<IAgentTool, DivisionTool>();
+builder.Services.AddSingleton<IAgentTool, ResilienceSimulationTool>();
 builder.Services.AddSingleton<ToolRegistry>();
 builder.Services.AddSingleton(new AgentExecutionPolicy());
 builder.Services.AddSingleton<AgentOrchestrator>();
@@ -32,6 +33,8 @@ await ingestionService.SeedAsync();
 
 app.MapGet("/", () => Results.Redirect("/lab/"));
 
+app.MapGet("/api/agent/policy", (AgentExecutionPolicy policy) => Results.Ok(policy));
+
 app.MapGet("/api/rag/status", (
     RagIngestionStatusStore statusStore,
     IVectorStore vectorStore) => Results.Ok(new
@@ -40,8 +43,7 @@ app.MapGet("/api/rag/status", (
     documents = statusStore.GetAll()
 }));
 
-app.MapGet("/api/rag/deadletters", (
-    DeadLetterStore deadLetters) => Results.Ok(deadLetters.GetAll()));
+app.MapGet("/api/rag/deadletters", (DeadLetterStore deadLetters) => Results.Ok(deadLetters.GetAll()));
 
 app.MapPost("/api/rag/documents", async (
     RagDocument document,
@@ -52,10 +54,7 @@ app.MapPost("/api/rag/documents", async (
 {
     var documentVersion = version ?? 1;
     var key = $"{document.Id}:{documentVersion}";
-    var queued = await ingestion.QueueAsync(
-        document,
-        documentVersion,
-        cancellationToken);
+    var queued = await ingestion.QueueAsync(document, documentVersion, cancellationToken);
 
     if (!queued)
     {
@@ -85,25 +84,15 @@ app.MapPost("/api/chat/{conversationId}", async (
     IConversationStore conversationStore,
     ContextBuilder contextBuilder,
     AgentOrchestrator agent,
+    AgentExecutionPolicy policy,
     CancellationToken cancellationToken) =>
 {
     var history = conversationStore.GetHistory(conversationId);
-    var context = contextBuilder.Build(
-        request.Message,
-        history,
-        Array.Empty<RagDocument>());
+    var context = contextBuilder.Build(request.Message, history, Array.Empty<RagDocument>());
+    var result = await agent.RunAsync(context.Messages, cancellationToken);
 
-    var result = await agent.RunAsync(
-        context.Messages,
-        cancellationToken);
-
-    conversationStore.Add(
-        conversationId,
-        new LlmMessage("user", request.Message));
-
-    conversationStore.Add(
-        conversationId,
-        new LlmMessage("assistant", result.Text));
+    conversationStore.Add(conversationId, new LlmMessage("user", request.Message));
+    conversationStore.Add(conversationId, new LlmMessage("assistant", result.Text));
 
     return Results.Ok(new
     {
@@ -116,6 +105,7 @@ app.MapPost("/api/chat/{conversationId}", async (
             result.OutputTokens,
             result.TotalTokens
         },
+        executionPolicy = policy,
         context = context.Messages
     });
 });

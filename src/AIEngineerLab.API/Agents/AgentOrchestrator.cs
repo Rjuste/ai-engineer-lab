@@ -37,12 +37,7 @@ public sealed class AgentOrchestrator
         catch (TimeoutException exception)
         {
             steps.Add(new AgentStep("llm_timeout", exception.Message));
-            return new AgentRunResult(
-                "The model did not respond within the allowed time.",
-                steps,
-                0,
-                0,
-                0);
+            return new AgentRunResult("The model did not respond within the allowed time.", steps, 0, 0, 0);
         }
 
         var totalInputTokens = generation.InputTokens;
@@ -57,27 +52,14 @@ public sealed class AgentOrchestrator
                     "token_budget_exceeded",
                     $"Stopped because total token usage {totalTokens} exceeded the budget of {_policy.MaxTotalTokens}."));
 
-                return BuildStoppedResult(
-                    generation,
-                    steps,
-                    totalInputTokens,
-                    totalOutputTokens,
-                    totalTokens,
+                return BuildStoppedResult(generation, steps, totalInputTokens, totalOutputTokens, totalTokens,
                     "I stopped because the agent reached its token budget.");
             }
 
             if (generation.ToolCalls.Count == 0)
             {
-                steps.Add(new AgentStep(
-                    "final_answer",
-                    "The model returned a final answer without requesting another tool."));
-
-                return new AgentRunResult(
-                    generation.Text,
-                    steps,
-                    totalInputTokens,
-                    totalOutputTokens,
-                    totalTokens);
+                steps.Add(new AgentStep("final_answer", "The model returned a final answer without requesting another tool."));
+                return new AgentRunResult(generation.Text, steps, totalInputTokens, totalOutputTokens, totalTokens);
             }
 
             var toolOutputs = new List<LlmToolOutput>();
@@ -86,16 +68,8 @@ public sealed class AgentOrchestrator
             {
                 if (toolExecutions >= _policy.MaxToolExecutions)
                 {
-                    steps.Add(new AgentStep(
-                        "tool_budget_exceeded",
-                        $"Stopped after {_policy.MaxToolExecutions} tool executions."));
-
-                    return BuildStoppedResult(
-                        generation,
-                        steps,
-                        totalInputTokens,
-                        totalOutputTokens,
-                        totalTokens,
+                    steps.Add(new AgentStep("tool_budget_exceeded", $"Stopped after {_policy.MaxToolExecutions} tool executions."));
+                    return BuildStoppedResult(generation, steps, totalInputTokens, totalOutputTokens, totalTokens,
                         "I stopped because the agent reached its tool execution budget.");
                 }
 
@@ -105,15 +79,8 @@ public sealed class AgentOrchestrator
 
                 if (!_toolRegistry.TryGet(toolCall.Name, out var tool))
                 {
-                    var error = JsonSerializer.Serialize(new
-                    {
-                        error = $"Tool '{toolCall.Name}' is not registered or allowed."
-                    });
-
-                    steps.Add(new AgentStep(
-                        "tool_rejected",
-                        $"Rejected unregistered tool '{toolCall.Name}'."));
-
+                    var error = JsonSerializer.Serialize(new { error = $"Tool '{toolCall.Name}' is not registered or allowed." });
+                    steps.Add(new AgentStep("tool_rejected", $"Rejected unregistered tool '{toolCall.Name}'."));
                     toolOutputs.Add(new LlmToolOutput(toolCall.CallId, error));
                     continue;
                 }
@@ -126,29 +93,25 @@ public sealed class AgentOrchestrator
                     var (output, attempts) = await ExecuteToolWithPolicyAsync(
                         tool,
                         toolCall.Arguments,
+                        steps,
                         cancellationToken);
 
                     stopwatch.Stop();
-
                     steps.Add(new AgentStep(
                         "tool_executed",
                         $"Executed '{toolCall.Name}' successfully in {stopwatch.ElapsedMilliseconds} ms after {attempts} attempt(s)."));
-
                     toolOutputs.Add(new LlmToolOutput(toolCall.CallId, output));
                 }
                 catch (ArgumentException exception)
                 {
-                    stopwatch.Stop();
                     AddToolFailure(toolOutputs, steps, toolCall, exception, "tool_validation_failed");
                 }
                 catch (JsonException exception)
                 {
-                    stopwatch.Stop();
                     AddToolFailure(toolOutputs, steps, toolCall, exception, "tool_validation_failed");
                 }
                 catch (TimeoutException exception)
                 {
-                    stopwatch.Stop();
                     AddToolFailure(toolOutputs, steps, toolCall, exception, "tool_timeout");
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -157,7 +120,6 @@ public sealed class AgentOrchestrator
                 }
                 catch (Exception exception)
                 {
-                    stopwatch.Stop();
                     AddToolFailure(toolOutputs, steps, toolCall, exception, "tool_failed");
                 }
             }
@@ -177,13 +139,7 @@ public sealed class AgentOrchestrator
             catch (TimeoutException exception)
             {
                 steps.Add(new AgentStep("llm_timeout", exception.Message));
-
-                return BuildStoppedResult(
-                    generation,
-                    steps,
-                    totalInputTokens,
-                    totalOutputTokens,
-                    totalTokens,
+                return BuildStoppedResult(generation, steps, totalInputTokens, totalOutputTokens, totalTokens,
                     "The model timed out while continuing after a tool call.");
             }
 
@@ -192,22 +148,15 @@ public sealed class AgentOrchestrator
             totalTokens += generation.TotalTokens;
         }
 
-        steps.Add(new AgentStep(
-            "max_iterations_reached",
-            $"Stopped after {_policy.MaxToolIterations} model/tool iterations."));
-
-        return BuildStoppedResult(
-            generation,
-            steps,
-            totalInputTokens,
-            totalOutputTokens,
-            totalTokens,
+        steps.Add(new AgentStep("max_iterations_reached", $"Stopped after {_policy.MaxToolIterations} model/tool iterations."));
+        return BuildStoppedResult(generation, steps, totalInputTokens, totalOutputTokens, totalTokens,
             "I could not complete the request within the allowed agent iterations.");
     }
 
     private async Task<(string Output, int Attempts)> ExecuteToolWithPolicyAsync(
         IAgentTool tool,
         string argumentsJson,
+        List<AgentStep> steps,
         CancellationToken cancellationToken)
     {
         var maxAttempts = _policy.MaxToolRetries + 1;
@@ -235,8 +184,12 @@ public sealed class AgentOrchestrator
             {
                 throw;
             }
-            catch when (attempt < maxAttempts)
+            catch (Exception exception) when (attempt < maxAttempts)
             {
+                steps.Add(new AgentStep(
+                    "tool_retry",
+                    $"Retrying '{tool.Name}' after attempt {attempt} failed: {exception.Message}"));
+
                 await Task.Delay(TimeSpan.FromMilliseconds(150 * attempt), cancellationToken);
             }
         }
@@ -269,15 +222,8 @@ public sealed class AgentOrchestrator
         Exception exception,
         string stepName)
     {
-        var error = JsonSerializer.Serialize(new
-        {
-            error = exception.Message
-        });
-
-        steps.Add(new AgentStep(
-            stepName,
-            $"'{toolCall.Name}' did not execute: {exception.Message}"));
-
+        var error = JsonSerializer.Serialize(new { error = exception.Message });
+        steps.Add(new AgentStep(stepName, $"'{toolCall.Name}' did not execute: {exception.Message}"));
         toolOutputs.Add(new LlmToolOutput(toolCall.CallId, error));
     }
 
@@ -290,9 +236,7 @@ public sealed class AgentOrchestrator
         string fallbackText)
     {
         return new AgentRunResult(
-            string.IsNullOrWhiteSpace(generation.Text)
-                ? fallbackText
-                : generation.Text,
+            string.IsNullOrWhiteSpace(generation.Text) ? fallbackText : generation.Text,
             steps,
             inputTokens,
             outputTokens,
