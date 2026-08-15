@@ -20,7 +20,8 @@ public class DocumentChunker
 
             chunks.Add(new RagDocument(
                 $"{document.Id}-chunk-{chunkIndex}",
-                string.Join(' ', chunkWords)));
+                string.Join(' ', chunkWords),
+                document.Metadata));
 
             chunkIndex++;
 
