@@ -10,24 +10,33 @@ public class InMemoryRagRetriever : IRagRetriever
 
     public IReadOnlyList<RagDocument> Retrieve(string query, int topK = 2)
     {
-        var queryTerms = query
-            .ToLowerInvariant()
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .ToHashSet();
+        var queryTerms = Tokenize(query).ToHashSet();
 
         return _documents
             .Select(document => new
             {
                 Document = document,
-                Score = document.Content
-                    .ToLowerInvariant()
-                    .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                    .Count(queryTerms.Contains)
+                Score = Tokenize(document.Content).Count(queryTerms.Contains)
             })
             .Where(result => result.Score > 0)
             .OrderByDescending(result => result.Score)
             .Take(topK)
             .Select(result => result.Document)
             .ToList();
+    }
+
+    private static IEnumerable<string> Tokenize(string text)
+    {
+        var normalized = new string(
+            text
+                .ToLowerInvariant()
+                .Select(character => char.IsLetterOrDigit(character) || char.IsWhiteSpace(character)
+                    ? character
+                    : ' ')
+                .ToArray());
+
+        return normalized.Split(
+            ' ',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 }
