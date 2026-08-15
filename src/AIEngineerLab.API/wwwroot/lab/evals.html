@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Retrieval Evals · AI Engineer Lab</title>
+    <style>
+        * { box-sizing:border-box; }
+        body { margin:0; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#f4f6f8; color:#17202a; }
+        .wrap { max-width:1120px; margin:auto; padding:18px; }
+        .hero { background:linear-gradient(135deg,#111827,#263449); color:white; border-radius:18px; padding:22px; margin-bottom:16px; box-shadow:0 10px 30px rgba(15,23,42,.12); }
+        .hero h1 { margin:0 0 6px; font-size:27px; }
+        .hero p { margin:0; color:#cbd5e1; line-height:1.5; }
+        .hero a { color:white; }
+        .card { background:white; border:1px solid #e5e7eb; border-radius:16px; padding:17px; margin:13px 0; box-shadow:0 4px 18px rgba(15,23,42,.05); }
+        .card h2 { margin:0 0 8px; font-size:18px; }
+        .copy { color:#667085; font-size:14px; line-height:1.5; }
+        .controls { display:flex; align-items:end; flex-wrap:wrap; gap:10px; }
+        .controls label { font-size:12px; font-weight:800; color:#475467; }
+        input { display:block; width:100px; padding:10px; margin-top:5px; border:1px solid #cfd4dc; border-radius:10px; }
+        button { border:0; border-radius:10px; padding:11px 14px; font-weight:800; cursor:pointer; background:#17202a; color:white; }
+        button.secondary { background:#eef2f6; color:#17202a; }
+        .status { color:#667085; font-size:13px; min-height:20px; margin-top:9px; }
+        .metrics { display:grid; grid-template-columns:repeat(6,1fr); gap:9px; }
+        .metric { background:#f8fafc; border:1px solid #e5e7eb; border-radius:12px; padding:12px; }
+        .metric .label { color:#667085; font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
+        .metric .value { font-size:22px; font-weight:850; margin-top:3px; }
+        .good { color:#067647; }
+        .bad { color:#b42318; }
+        table { width:100%; border-collapse:collapse; font-size:13px; }
+        th,td { text-align:left; padding:10px 8px; border-bottom:1px solid #eaecf0; vertical-align:top; }
+        th { color:#475467; font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
+        .pill { display:inline-block; border-radius:999px; padding:4px 8px; font-size:11px; font-weight:800; background:#eef2f6; margin:1px 3px 1px 0; }
+        .pill.pass { background:#ecfdf3; color:#067647; }
+        .pill.fail { background:#fef3f2; color:#b42318; }
+        .case { border:1px solid #e4e7ec; border-radius:12px; padding:13px; margin-top:10px; background:#fbfcfd; }
+        .case-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+        .case-title { font-weight:850; }
+        .case-question { color:#475467; margin:5px 0 10px; line-height:1.45; }
+        .case-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+        .mini { background:white; border:1px solid #eaecf0; border-radius:10px; padding:10px; }
+        .mini strong { display:block; font-size:11px; color:#667085; text-transform:uppercase; letter-spacing:.05em; margin-bottom:5px; }
+        .docs { font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; font-size:12px; overflow-wrap:anywhere; }
+        .violation { margin-top:8px; padding:9px; border-radius:9px; background:#fef3f2; color:#b42318; font-size:12px; }
+        @media(max-width:900px){ .metrics{grid-template-columns:repeat(3,1fr)} }
+        @media(max-width:650px){ .metrics{grid-template-columns:1fr 1fr}.case-grid{grid-template-columns:1fr}.wrap{padding:12px} }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="hero">
+        <h1>Phase 19 · Retrieval Evals</h1>
+        <p>Run a deterministic golden dataset against the Phase 18 retrieval pipeline and inspect recall@K, precision@K, MRR, latency, stale-document traps, and tenant-boundary failures. <a href="/lab/">Back to the main lab</a>.</p>
+    </div>
+
+    <div class="card">
+        <h2>Run configuration</h2>
+        <p class="copy">K controls how many final reranked chunks count as retrieved. A case passes only when every expected source is represented and no forbidden source crosses a stale-policy or authorization boundary.</p>
+        <div class="controls">
+            <label>Final K<input id="k" type="number" min="1" max="20" value="5"></label>
+            <button id="run">Run retrieval evals</button>
+            <button id="loadCases" class="secondary">Show golden cases</button>
+        </div>
+        <div id="status" class="status">Ready.</div>
+    </div>
+
+    <div class="card">
+        <h2>Evaluation scorecard</h2>
+        <div id="metrics" class="metrics">
+            <div class="metric"><div class="label">Pass rate</div><div class="value">—</div></div>
+            <div class="metric"><div class="label">Hit rate@K</div><div class="value">—</div></div>
+            <div class="metric"><div class="label">Recall@K</div><div class="value">—</div></div>
+            <div class="metric"><div class="label">Precision@K</div><div class="value">—</div></div>
+            <div class="metric"><div class="label">MRR</div><div class="value">—</div></div>
+            <div class="metric"><div class="label">Avg latency</div><div class="value">—</div></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Category breakdown</h2>
+        <div style="overflow:auto">
+            <table>
+                <thead><tr><th>Category</th><th>Passed</th><th>Pass rate</th><th>Recall@K</th><th>Precision@K</th><th>MRR</th><th>Latency</th></tr></thead>
+                <tbody id="categories"><tr><td colspan="7" class="copy">Run the eval suite to populate category metrics.</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Case results</h2>
+        <div id="results" class="copy">Run the eval suite to inspect each golden case.</div>
+    </div>
+
+    <div class="card">
+        <h2>Golden dataset</h2>
+        <div id="cases" class="copy">Select “Show golden cases” to inspect expected and forbidden source prefixes.</div>
+    </div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const pct=v=>`${((v??0)*100).toFixed(1)}%`;
+const num=v=>Number(v??0).toFixed(3);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function renderMetrics(r){
+    const passClass=(r.passRate??0)===1?'good':'bad';
+    $('metrics').innerHTML=`
+        <div class="metric"><div class="label">Pass rate</div><div class="value ${passClass}">${pct(r.passRate)}</div></div>
+        <div class="metric"><div class="label">Hit rate@${r.k}</div><div class="value">${pct(r.hitRateAtK)}</div></div>
+        <div class="metric"><div class="label">Recall@${r.k}</div><div class="value">${num(r.meanRecallAtK)}</div></div>
+        <div class="metric"><div class="label">Precision@${r.k}</div><div class="value">${num(r.meanPrecisionAtK)}</div></div>
+        <div class="metric"><div class="label">MRR</div><div class="value">${num(r.mrr)}</div></div>
+        <div class="metric"><div class="label">Avg latency</div><div class="value">${Number(r.averageLatencyMs??0).toFixed(1)} ms</div></div>`;
+}
+
+function renderCategories(items){
+    $('categories').innerHTML=(items||[]).map(c=>`<tr>
+        <td>${esc(c.category)}</td>
+        <td>${c.passedCases}/${c.totalCases}</td>
+        <td>${pct(c.passRate)}</td>
+        <td>${num(c.meanRecallAtK)}</td>
+        <td>${num(c.meanPrecisionAtK)}</td>
+        <td>${num(c.mrr)}</td>
+        <td>${Number(c.averageLatencyMs??0).toFixed(1)} ms</td>
+    </tr>`).join('')||'<tr><td colspan="7">No category results.</td></tr>';
+}
+
+function renderResults(items){
+    $('results').innerHTML=(items||[]).map(c=>{
+        const expected=(c.expectedDocumentPrefixes||[]).map(x=>`<span class="pill">${esc(x)}</span>`).join('');
+        const retrieved=(c.retrievedDocumentIds||[]).map((x,i)=>`<div>${i+1}. ${esc(x)}</div>`).join('')||'None';
+        const violations=(c.violations||[]).map(v=>`<div class="violation">${esc(v)}</div>`).join('');
+        return `<div class="case">
+            <div class="case-head"><div><div class="case-title">${esc(c.id)}</div><span class="pill">${esc(c.category)}</span></div><span class="pill ${c.passed?'pass':'fail'}">${c.passed?'PASS':'FAIL'}</span></div>
+            <div class="case-question">${esc(c.question)}</div>
+            <div class="case-grid">
+                <div class="mini"><strong>Expected sources</strong>${expected||'None'}</div>
+                <div class="mini docs"><strong>Retrieved rank order</strong>${retrieved}</div>
+            </div>
+            <div style="margin-top:8px"><span class="pill">recall ${num(c.recallAtK)}</span><span class="pill">precision ${num(c.precisionAtK)}</span><span class="pill">RR ${num(c.reciprocalRank)}</span><span class="pill">first rank ${c.firstRelevantRank??'—'}</span><span class="pill">${c.latencyMs} ms</span></div>
+            ${violations}
+        </div>`;
+    }).join('')||'No case results.';
+}
+
+async function run(){
+    try{
+        $('status').textContent='Running golden dataset through the retrieval pipeline…';
+        const k=Math.max(1,Math.min(20,Number($('k').value||5)));
+        const response=await fetch(`/api/evals/retrieval/run?k=${encodeURIComponent(k)}`,{method:'POST'});
+        const report=await response.json();
+        if(!response.ok) throw new Error(report.error||JSON.stringify(report));
+        renderMetrics(report); renderCategories(report.categories); renderResults(report.cases);
+        $('status').textContent=`Completed ${report.totalCases} cases: ${report.passedCases} passed, ${report.totalCases-report.passedCases} failed.`;
+    }catch(error){ $('status').textContent=`Eval run failed: ${error.message}`; }
+}
+
+async function loadCases(){
+    try{
+        const response=await fetch('/api/evals/retrieval/cases');
+        const cases=await response.json();
+        if(!response.ok) throw new Error(cases.error||JSON.stringify(cases));
+        $('cases').innerHTML=cases.map(c=>`<div class="case">
+            <div class="case-head"><div class="case-title">${esc(c.id)}</div><span class="pill">${esc(c.category)}</span></div>
+            <div class="case-question">${esc(c.question)}</div>
+            <div><strong>Expected:</strong> ${(c.expectedDocumentPrefixes||[]).map(x=>`<span class="pill">${esc(x)}</span>`).join('')}</div>
+            <div style="margin-top:6px"><strong>Forbidden:</strong> ${(c.forbiddenDocumentPrefixes||[]).map(x=>`<span class="pill fail">${esc(x)}</span>`).join('')||'None'}</div>
+            <div class="copy" style="margin-top:7px">Scope: tenant=${esc(c.filter?.tenantId||'any')}, country=${esc(c.filter?.country||'any')}, year=${esc(c.filter?.year??'any')}, department=${esc(c.filter?.department||'any')}${c.rewriteQuery?' · query rewrite enabled':''}</div>
+        </div>`).join('');
+    }catch(error){ $('cases').textContent=`Could not load cases: ${error.message}`; }
+}
+
+$('run').onclick=run;
+$('loadCases').onclick=loadCases;
+</script>
+</body>
+</html>
