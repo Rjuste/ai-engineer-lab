@@ -19,4 +19,15 @@ public class InMemoryRagRetriever : IRagRetriever
         var queryVector = await _embeddingService.EmbedAsync(query, cancellationToken);
         return _vectorStore.Search(queryVector, topK);
     }
+
+    public async Task<IReadOnlyList<RagSearchResult>> SearchAsync(
+        string query,
+        int topK,
+        RagSearchFilter? filter,
+        double minimumSimilarity,
+        CancellationToken cancellationToken = default)
+    {
+        var queryVector = await _embeddingService.EmbedAsync(query, cancellationToken);
+        return _vectorStore.Search(queryVector, topK, filter, minimumSimilarity);
+    }
 }
