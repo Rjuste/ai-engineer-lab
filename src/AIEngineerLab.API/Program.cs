@@ -19,6 +19,7 @@ builder.Services.AddSingleton<IAgentTool, KnowledgeBaseSearchTool>();
 builder.Services.AddSingleton<IAgentTool, RagStatusTool>();
 builder.Services.AddSingleton<IAgentTool, DivisionTool>();
 builder.Services.AddSingleton<ToolRegistry>();
+builder.Services.AddSingleton(new AgentExecutionPolicy());
 builder.Services.AddSingleton<AgentOrchestrator>();
 
 var app = builder.Build();
