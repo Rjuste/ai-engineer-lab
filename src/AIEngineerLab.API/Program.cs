@@ -1,6 +1,6 @@
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSingleton<ILlmService, MockLlmService>();
+builder.Services.AddHttpClient<ILlmService, OpenAiLlmService>();
 builder.Services.AddSingleton<TokenEstimator>();
 builder.Services.AddSingleton<ConversationSummarizer>();
 builder.Services.AddSingleton<ContextBuilder>();
@@ -81,17 +81,23 @@ app.MapPost("/api/chat/{conversationId}", async (
         cancellationToken: cancellationToken);
     var retrievedDocuments = retrievalResults.Select(result => result.Document).ToList();
     var context = contextBuilder.Build(request.Message, history, retrievedDocuments);
-    var answer = await llm.GenerateAsync(context.Messages);
+    var generation = await llm.GenerateAsync(context.Messages, cancellationToken);
 
     conversationStore.Add(conversationId, new LlmMessage("user", request.Message));
-    conversationStore.Add(conversationId, new LlmMessage("assistant", answer));
+    conversationStore.Add(conversationId, new LlmMessage("assistant", generation.Text));
 
     return Results.Ok(new
     {
         conversationId,
-        answer,
+        answer = generation.Text,
         retrievalResults,
         context = context.Messages,
+        llmUsage = new
+        {
+            generation.InputTokens,
+            generation.OutputTokens,
+            generation.TotalTokens
+        },
         tokenBudget = new
         {
             context.EstimatedInputTokens,

@@ -1,4 +1,6 @@
 public interface ILlmService
 {
-    Task<string> GenerateAsync(IReadOnlyList<LlmMessage> context);
+    Task<LlmGenerationResult> GenerateAsync(
+        IReadOnlyList<LlmMessage> context,
+        CancellationToken cancellationToken = default);
 }
