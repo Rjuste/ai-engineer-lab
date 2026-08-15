@@ -16,6 +16,7 @@ builder.Services.AddHostedService<RagIngestionWorker>();
 builder.Services.AddSingleton<IRagRetriever, InMemoryRagRetriever>();
 
 builder.Services.AddSingleton<IAgentTool, KnowledgeBaseSearchTool>();
+builder.Services.AddSingleton<IAgentTool, RagStatusTool>();
 builder.Services.AddSingleton<ToolRegistry>();
 builder.Services.AddSingleton<AgentOrchestrator>();
 
