@@ -10,6 +10,7 @@ builder.Services.AddSingleton<DocumentChunker>();
 builder.Services.AddSingleton<IVectorStore, InMemoryVectorStore>();
 builder.Services.AddSingleton<RagIngestionQueue>();
 builder.Services.AddSingleton<RagIngestionStatusStore>();
+builder.Services.AddSingleton<DeadLetterStore>();
 builder.Services.AddSingleton<RagIngestionService>();
 builder.Services.AddHostedService<RagIngestionWorker>();
 builder.Services.AddSingleton<IRagRetriever, InMemoryRagRetriever>();
@@ -19,35 +20,35 @@ var app = builder.Build();
 var ingestionService = app.Services.GetRequiredService<RagIngestionService>();
 await ingestionService.SeedAsync();
 
-app.MapGet("/", () =>
-{
-    return "AI Engineer Lab is running!";
-});
+app.MapGet("/", () => "AI Engineer Lab is running!");
 
 app.MapGet("/api/rag/status", (
     RagIngestionStatusStore statusStore,
-    IVectorStore vectorStore) =>
+    IVectorStore vectorStore) => Results.Ok(new
 {
-    return Results.Ok(new
-    {
-        vectorCount = vectorStore.Count,
-        documents = statusStore.GetAll()
-    });
-});
+    vectorCount = vectorStore.Count,
+    documents = statusStore.GetAll()
+}));
+
+app.MapGet("/api/rag/deadletters", (
+    DeadLetterStore deadLetters) => Results.Ok(deadLetters.GetAll()));
 
 app.MapPost("/api/rag/documents", async (
     RagDocument document,
+    int? version,
     RagIngestionService ingestion,
     CancellationToken cancellationToken) =>
 {
-    await ingestion.QueueAsync(document, cancellationToken);
+    var documentVersion = version ?? 1;
+    await ingestion.QueueAsync(document, documentVersion, cancellationToken);
 
-    return Results.Accepted(
-        value: new
-        {
-            document.Id,
-            status = "Queued"
-        });
+    return Results.Accepted(value: new
+    {
+        document.Id,
+        version = documentVersion,
+        idempotencyKey = $"{document.Id}:{documentVersion}",
+        status = "Queued"
+    });
 });
 
 app.MapPost("/api/chat/{conversationId}", async (

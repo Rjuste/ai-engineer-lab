@@ -2,16 +2,17 @@ using System.Threading.Channels;
 
 public class RagIngestionQueue
 {
-    private readonly Channel<RagDocument> _channel = Channel.CreateUnbounded<RagDocument>();
+    private readonly Channel<RagIngestionJob> _channel =
+        Channel.CreateUnbounded<RagIngestionJob>();
 
     public ValueTask EnqueueAsync(
-        RagDocument document,
+        RagIngestionJob job,
         CancellationToken cancellationToken = default)
     {
-        return _channel.Writer.WriteAsync(document, cancellationToken);
+        return _channel.Writer.WriteAsync(job, cancellationToken);
     }
 
-    public IAsyncEnumerable<RagDocument> ReadAllAsync(
+    public IAsyncEnumerable<RagIngestionJob> ReadAllAsync(
         CancellationToken cancellationToken = default)
     {
         return _channel.Reader.ReadAllAsync(cancellationToken);

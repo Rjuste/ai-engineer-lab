@@ -3,7 +3,7 @@ public class RagIngestionService
     private readonly RagIngestionQueue _queue;
     private readonly RagIngestionStatusStore _statusStore;
 
-    private readonly List<RagDocument> _seedDocuments =
+    private readonly List<RagDocument> _documents =
     [
         new("rag", "RAG stands for Retrieval-Augmented Generation. It retrieves relevant external information and adds it to the LLM context before generation."),
         new("embeddings", "Embeddings convert text into numeric vectors so semantically similar text can be compared using vector similarity."),
@@ -21,17 +21,21 @@ public class RagIngestionService
 
     public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
-        foreach (var document in _seedDocuments)
-        {
-            await QueueAsync(document, cancellationToken);
-        }
+        foreach (var document in _documents)
+            await QueueAsync(document, 1, cancellationToken);
     }
 
     public async Task QueueAsync(
         RagDocument document,
+        int version = 1,
         CancellationToken cancellationToken = default)
     {
-        _statusStore.Set(document.Id, "Queued");
-        await _queue.EnqueueAsync(document, cancellationToken);
+        var job = new RagIngestionJob(document, version);
+
+        if (_statusStore.Get(job.IdempotencyKey) == "Indexed")
+            return;
+
+        _statusStore.Set(job.IdempotencyKey, "Queued");
+        await _queue.EnqueueAsync(job, cancellationToken);
     }
 }
