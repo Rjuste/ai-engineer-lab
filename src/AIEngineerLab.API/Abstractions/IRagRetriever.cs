@@ -1,12 +1,7 @@
-public interface IVectorStore
+public interface IRagRetriever
 {
-    int Count { get; }
-    void Add(RagDocument document, double[] embedding);
-    IReadOnlyList<RagSearchResult> Search(double[] queryEmbedding, int topK);
-    IReadOnlyList<RagSearchResult> Search(
-        double[] queryEmbedding,
-        int topK,
-        RagSearchFilter? filter,
-        double minimumSimilarity = 0);
-    int CountEligible(RagSearchFilter? filter);
+    Task<IReadOnlyList<RagSearchResult>> SearchAsync(
+        string query,
+        int topK = 2,
+        CancellationToken cancellationToken = default);
 }

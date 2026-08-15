@@ -23,13 +23,6 @@ public class InMemoryVectorStore : IVectorStore
     }
 
     public IReadOnlyList<RagSearchResult> Search(double[] queryEmbedding, int topK)
-        => Search(queryEmbedding, topK, filter: null, minimumSimilarity: 0);
-
-    public IReadOnlyList<RagSearchResult> Search(
-        double[] queryEmbedding,
-        int topK,
-        RagSearchFilter? filter,
-        double minimumSimilarity = 0)
     {
         List<(RagDocument Document, double[] Embedding)> snapshot;
 
@@ -38,28 +31,13 @@ public class InMemoryVectorStore : IVectorStore
             snapshot = _items.ToList();
         }
 
-        var eligible = filter is null
-            ? snapshot
-            : snapshot.Where(item => filter.Matches(item.Document)).ToList();
-
-        return eligible
+        return snapshot
             .Select(item => new RagSearchResult(
                 item.Document,
                 CosineSimilarity(queryEmbedding, item.Embedding)))
-            .Where(result => result.Score >= minimumSimilarity)
             .OrderByDescending(result => result.Score)
-            .Take(Math.Max(1, topK))
+            .Take(topK)
             .ToList();
-    }
-
-    public int CountEligible(RagSearchFilter? filter)
-    {
-        lock (_sync)
-        {
-            return filter is null
-                ? _items.Count
-                : _items.Count(item => filter.Matches(item.Document));
-        }
     }
 
     private static double CosineSimilarity(double[] left, double[] right)
