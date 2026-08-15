@@ -99,6 +99,7 @@ app.MapPost("/api/chat/{conversationId}", async (
         conversationId,
         answer = result.Text,
         agentSteps = result.Steps,
+        trace = result.Trace,
         llmUsage = new
         {
             result.InputTokens,
