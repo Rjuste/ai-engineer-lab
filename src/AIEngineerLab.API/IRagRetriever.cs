@@ -1,4 +1,4 @@
 public interface IRagRetriever
 {
-    IReadOnlyList<RagDocument> Retrieve(string query, int topK = 2);
+    IReadOnlyList<RagSearchResult> Search(string query, int topK = 2);
 }
