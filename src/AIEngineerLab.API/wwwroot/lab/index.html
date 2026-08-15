@@ -8,7 +8,7 @@
         :root { color-scheme: light; }
         * { box-sizing: border-box; }
         body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f4f6f8; color: #17202a; }
-        .wrap { max-width: 980px; margin: auto; padding: 18px; }
+        .wrap { max-width: 1040px; margin: auto; padding: 18px; }
         .hero { background: linear-gradient(135deg,#111827,#263449); color: white; border-radius: 18px; padding: 22px; margin-bottom: 16px; box-shadow: 0 10px 30px rgba(15,23,42,.12); }
         .hero h1 { margin: 0 0 6px; font-size: 27px; }
         .hero p { margin: 0; color: #cbd5e1; }
@@ -31,7 +31,7 @@
         .metrics { display:grid; grid-template-columns:repeat(3,1fr); gap:9px; }
         .metric { background:#f8fafc; border:1px solid #e5e7eb; border-radius:12px; padding:12px; }
         .metric .label { color:#667085; font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
-        .metric .value { font-size:21px; font-weight:800; margin-top:2px; }
+        .metric .value { font-size:21px; font-weight:800; margin-top:2px; overflow-wrap:anywhere; }
         .policy { display:flex; flex-wrap:wrap; gap:7px; }
         .chip { background:#eef2ff; color:#364152; border-radius:999px; padding:7px 10px; font-size:12px; font-weight:650; }
         .trace { position:relative; padding-left:18px; }
@@ -44,21 +44,37 @@
         .step.tool_retry::before { background:#f79009; }
         .step.tool_timeout::before,.step.tool_failed::before,.step.tool_validation_failed::before,.step.tool_rejected::before { background:#f04438; }
         .step.tool_requested::before { background:#6172f3; }
+        .obs-summary { display:grid; grid-template-columns:repeat(6,1fr); gap:9px; }
+        .obs-status { text-transform:uppercase; font-size:15px !important; }
+        .obs-status.success { color:#067647; }
+        .obs-status.failed,.obs-status.timeout,.obs-status.budget_exceeded,.obs-status.iteration_limit { color:#b42318; }
+        .span-list { margin-top:14px; display:grid; gap:10px; }
+        .span { border:1px solid #e4e7ec; border-radius:12px; padding:12px; background:#fbfcfd; }
+        .span-head { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px; }
+        .span-name { font-weight:800; font-size:13px; overflow-wrap:anywhere; }
+        .span-meta { color:#667085; font-size:12px; white-space:nowrap; }
+        .span-track { height:9px; border-radius:999px; background:#eef2f6; overflow:hidden; }
+        .span-bar { height:100%; min-width:3px; border-radius:999px; background:#6172f3; }
+        .span.tool .span-bar { background:#12b76a; }
+        .span.failed .span-bar { background:#f04438; }
+        .span-details { margin-top:7px; display:flex; flex-wrap:wrap; gap:6px; }
+        .span-pill { background:#f2f4f7; border-radius:999px; padding:4px 7px; font-size:11px; color:#475467; }
         .json-viewer { margin-top:8px; background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:12px; padding:14px; max-height:420px; overflow:auto; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; font-size:12px; line-height:1.55; -webkit-overflow-scrolling:touch; }
         .json-row { margin-left:14px; white-space:normal; overflow-wrap:anywhere; }
         .json-key { color:#79c0ff; } .json-string { color:#a5d6ff; } .json-number { color:#d2a8ff; } .json-boolean { color:#ff7b72; } .json-null,.json-count,.json-empty,.json-bracket { color:#8b949e; }
         .json-summary { cursor:pointer; user-select:none; }
         .toolbar { display:flex; gap:8px; margin-bottom:8px; }
         .toolbar button { padding:7px 9px; font-size:12px; background:#21262d; }
+        @media(max-width:900px){ .obs-summary{grid-template-columns:repeat(3,1fr)} }
         @media(max-width:720px){ .grid,.test-grid{grid-template-columns:1fr} .metrics{grid-template-columns:repeat(3,1fr)} .wrap{padding:12px} .hero{border-radius:14px;padding:18px} }
-        @media(max-width:420px){ .metrics{grid-template-columns:1fr} }
+        @media(max-width:480px){ .metrics,.obs-summary{grid-template-columns:1fr 1fr} }
     </style>
 </head>
 <body>
 <div class="wrap">
     <div class="hero">
         <h1>AI Engineer Lab</h1>
-        <p>Agent routing, RAG, tools, retries, budgets, and failure behavior in one place.</p>
+        <p>Agent routing, RAG, tools, retries, budgets, resilience, and observability in one place.</p>
     </div>
 
     <div class="card">
@@ -91,11 +107,25 @@
         <div id="answer" class="answer">—</div>
     </div>
 
+    <div class="card">
+        <h2>Observability</h2>
+        <p class="section-copy">One agent run is a trace. Each LLM call or tool execution is a span inside that trace.</p>
+        <div id="obsSummary" class="obs-summary">
+            <div class="metric"><div class="label">Status</div><div class="value">—</div></div>
+            <div class="metric"><div class="label">Run ID</div><div class="value">—</div></div>
+            <div class="metric"><div class="label">Latency</div><div class="value">—</div></div>
+            <div class="metric"><div class="label">LLM calls</div><div class="value">—</div></div>
+            <div class="metric"><div class="label">Tool calls</div><div class="value">—</div></div>
+            <div class="metric"><div class="label">Tokens</div><div class="value">—</div></div>
+        </div>
+        <div id="spanList" class="span-list"><div class="section-copy">Run the agent to see operation spans.</div></div>
+    </div>
+
     <div class="grid">
         <div class="card">
-            <h2>Agent trace</h2>
-            <p class="section-copy">Follow the model → tool → retry/failure → model path in order.</p>
-            <div id="trace" class="trace"><div class="step"><div class="step-desc">Run the agent to see the trace.</div></div></div>
+            <h2>Agent events</h2>
+            <p class="section-copy">Follow model decisions, retries, failures, and completion in order.</p>
+            <div id="trace" class="trace"><div class="step"><div class="step-desc">Run the agent to see the event trace.</div></div></div>
         </div>
         <div class="card">
             <h2>Token usage</h2>
@@ -135,10 +165,11 @@ function renderJson(id,value){const t=$(id);t.replaceChildren();t.appendChild(js
 function renderText(id,text){const t=$(id);t.replaceChildren();t.appendChild(primitiveNode(text))}
 function expandAll(id){$(id).querySelectorAll('details').forEach(x=>x.open=true)}
 function collapseAll(id){$(id).querySelectorAll('details').forEach(x=>x.open=false)}
-function renderTrace(steps){const t=$('trace');t.replaceChildren();for(const step of steps||[]){const el=document.createElement('div');el.className=`step ${step.name||''}`;const n=document.createElement('div');n.className='step-name';n.textContent=(step.name||'step').replaceAll('_',' ');const d=document.createElement('div');d.className='step-desc';d.textContent=step.description||'';el.append(n,d);t.appendChild(el)}if(!steps?.length)t.innerHTML='<div class="step"><div class="step-desc">No trace returned.</div></div>'}
+function renderTrace(steps){const t=$('trace');t.replaceChildren();for(const step of steps||[]){const el=document.createElement('div');el.className=`step ${step.name||''}`;const n=document.createElement('div');n.className='step-name';n.textContent=(step.name||'step').replaceAll('_',' ');const d=document.createElement('div');d.className='step-desc';d.textContent=step.description||'';el.append(n,d);t.appendChild(el)}if(!steps?.length)t.innerHTML='<div class="step"><div class="step-desc">No events returned.</div></div>'}
 function renderUsage(u){$('usage').innerHTML=`<div class="metric"><div class="label">Input</div><div class="value">${u?.inputTokens??0}</div></div><div class="metric"><div class="label">Output</div><div class="value">${u?.outputTokens??0}</div></div><div class="metric"><div class="label">Total</div><div class="value">${u?.totalTokens??0}</div></div>`}
+function renderObservability(trace){const summary=$('obsSummary'),list=$('spanList');if(!trace){summary.innerHTML='<div class="metric"><div class="label">Trace</div><div class="value">Unavailable</div></div>';list.innerHTML='';return}summary.innerHTML=`<div class="metric"><div class="label">Status</div><div class="value obs-status ${trace.status||''}">${trace.status||'—'}</div></div><div class="metric"><div class="label">Run ID</div><div class="value" style="font-size:15px">${trace.runId||'—'}</div></div><div class="metric"><div class="label">Latency</div><div class="value">${trace.durationMs??0} ms</div></div><div class="metric"><div class="label">LLM calls</div><div class="value">${trace.llmCalls??0}</div></div><div class="metric"><div class="label">Tool calls</div><div class="value">${trace.toolExecutions??0}</div></div><div class="metric"><div class="label">Tokens</div><div class="value">${trace.totalTokens??0}</div></div>`;list.replaceChildren();const spans=trace.spans||[];const max=Math.max(1,...spans.map(s=>s.durationMs||0));for(const span of spans){const el=document.createElement('div');el.className=`span ${span.type||''} ${span.status||''}`;const pct=Math.max(1,Math.round(((span.durationMs||0)/max)*100));el.innerHTML=`<div class="span-head"><div class="span-name">${(span.type||'span').toUpperCase()} · ${span.name||'operation'}</div><div class="span-meta">${span.durationMs??0} ms</div></div><div class="span-track"><div class="span-bar" style="width:${pct}%"></div></div><div class="span-details"><span class="span-pill">status: ${span.status||'unknown'}</span>${span.type==='llm'?`<span class="span-pill">input: ${span.inputTokens??0}</span><span class="span-pill">output: ${span.outputTokens??0}</span><span class="span-pill">tokens: ${span.totalTokens??0}</span>`:''}${span.type==='tool'?`<span class="span-pill">attempts: ${span.attempts??0}</span>`:''}</div>`;list.appendChild(el)}if(!spans.length)list.innerHTML='<div class="section-copy">No spans returned.</div>'}
 async function loadPolicy(){try{const p=await(await fetch('/api/agent/policy')).json();$('policy').innerHTML='';const labels=[['Max iterations',p.maxToolIterations],['Max tools',p.maxToolExecutions],['Token budget',p.maxTotalTokens],['Retries',p.maxToolRetries],['LLM timeout',`${p.llmTimeoutSeconds}s`],['Tool timeout',`${p.toolTimeoutSeconds}s`]];for(const [a,b] of labels){const s=document.createElement('span');s.className='chip';s.textContent=`${a}: ${b}`;$('policy').appendChild(s)}}catch{$('policy').innerHTML='<span class="chip">Policy unavailable</span>'}}
-async function runAgent(){try{$('status').textContent='Running agent…';const id=encodeURIComponent($('conversation').value);const r=await fetch('/api/chat/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:$('message').value})});const x=await r.json();if(!r.ok)throw new Error(JSON.stringify(x,null,2));$('answer').textContent=x.answer??'No final answer';renderTrace(x.agentSteps);renderUsage(x.llmUsage);renderJson('raw',x);$('status').textContent='Complete'}catch(e){$('status').textContent='Error';renderText('raw',e.message)}}
+async function runAgent(){try{$('status').textContent='Running agent…';const id=encodeURIComponent($('conversation').value);const r=await fetch('/api/chat/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:$('message').value})});const x=await r.json();if(!r.ok)throw new Error(JSON.stringify(x,null,2));$('answer').textContent=x.answer??'No final answer';renderTrace(x.agentSteps);renderUsage(x.llmUsage);renderObservability(x.trace);renderJson('raw',x);$('status').textContent='Complete'}catch(e){$('status').textContent='Error';renderText('raw',e.message)}}
 $('send').onclick=runAgent;
 document.querySelectorAll('[data-test]').forEach(btn=>btn.onclick=()=>{const id=(crypto.randomUUID?crypto.randomUUID():String(Date.now()));const kind=btn.dataset.test;if(kind==='recover')$('message').value=`Use the simulate_unstable_service tool to test transient retry recovery. Use scenarioId "${id}", failuresBeforeSuccess 1, and delayMs 0.`;if(kind==='exhaust')$('message').value=`Use the simulate_unstable_service tool to demonstrate retries being exhausted. Use scenarioId "${id}", failuresBeforeSuccess 2, and delayMs 0.`;if(kind==='timeout')$('message').value=`Use the simulate_unstable_service tool to demonstrate a tool timeout. Use scenarioId "${id}", failuresBeforeSuccess 0, and delayMs 5000.`;runAgent()});
 $('ingest').onclick=async()=>{try{$('ingestStatus').textContent='Queued…';const v=Number($('docVersion').value||1);const r=await fetch('/api/rag/documents?version='+encodeURIComponent(v),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:$('docId').value,content:$('docContent').value})});const x=await r.json();renderJson('ingestResult',x);$('ingestStatus').textContent=r.ok?'Submitted. Wait a few seconds, then refresh status/dead letters.':'Request failed'}catch(e){$('ingestStatus').textContent='Error';renderText('ingestResult',e.message)}};
