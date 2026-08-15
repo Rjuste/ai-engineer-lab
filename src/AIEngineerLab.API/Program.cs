@@ -5,6 +5,7 @@ builder.Services.AddSingleton<TokenEstimator>();
 builder.Services.AddSingleton<ConversationSummarizer>();
 builder.Services.AddSingleton<ContextBuilder>();
 builder.Services.AddSingleton<IConversationStore, InMemoryConversationStore>();
+builder.Services.AddSingleton<SimpleEmbeddingService>();
 builder.Services.AddSingleton<IRagRetriever, InMemoryRagRetriever>();
 
 var app = builder.Build();
@@ -23,7 +24,8 @@ app.MapPost("/api/chat/{conversationId}", async (
     ILlmService llm) =>
 {
     var history = conversationStore.GetHistory(conversationId);
-    var retrievedDocuments = ragRetriever.Retrieve(request.Message);
+    var retrievalResults = ragRetriever.Search(request.Message);
+    var retrievedDocuments = retrievalResults.Select(result => result.Document).ToList();
     var context = contextBuilder.Build(request.Message, history, retrievedDocuments);
     var answer = await llm.GenerateAsync(context.Messages);
 
@@ -34,7 +36,7 @@ app.MapPost("/api/chat/{conversationId}", async (
     {
         conversationId,
         answer,
-        retrievedDocuments,
+        retrievalResults,
         context = context.Messages,
         tokenBudget = new
         {
