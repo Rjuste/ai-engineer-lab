@@ -1,1 +1,272 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Engineer Lab</title><style>body{font-family:system-ui;margin:0;background:#f6f7f9;color:#17202a}.wrap{max-width:900px;margin:auto;padding:16px}h1{font-size:24px}.card{background:white;border:1px solid #ddd;border-radius:12px;padding:16px;margin:12px 0}input,textarea,button{font:inherit;box-sizing:border-box;width:100%;padding:12px;margin-top:8px;border:1px solid #bbb;border-radius:8px}textarea{min-height:90px}button{background:#17202a;color:white;font-weight:600}.secondary{background:white;color:#17202a}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}pre{white-space:pre-wrap;word-break:break-word;background:#f3f4f6;padding:12px;border-radius:8px;max-height:350px;overflow:auto}.muted{color:#68707a;font-size:14px}@media(max-width:650px){.grid{grid-template-columns:1fr}}</style></head><body><div class="wrap"><h1>AI Engineer Lab</h1><p class="muted">Run the agent and inspect each layer.</p><div class="card"><h2>Agent</h2><label>Conversation ID</label><input id="conversation" value="lab1"><label>Message</label><textarea id="message">Explain embeddings using our knowledge base.</textarea><button id="send">Run agent</button><p id="status" class="muted"></p></div><div class="card"><h2>Final answer</h2><div id="answer">—</div></div><div class="grid"><div class="card"><h2>Agent / tool trace</h2><pre id="trace">—</pre></div><div class="card"><h2>Token usage</h2><pre id="usage">—</pre></div></div><div class="card"><h2>Full response</h2><pre id="raw">—</pre></div><div class="card"><h2>RAG ingestion tester</h2><p class="muted">This sends a document to the ingestion pipeline. Use FAIL_INGESTION to deliberately test retries and dead-lettering.</p><label>Document ID</label><input id="docId" value="failure-test-ui-1"><label>Version</label><input id="docVersion" type="number" value="1" min="1"><label>Document content</label><textarea id="docContent">FAIL_INGESTION</textarea><button id="ingest">Queue document</button><p id="ingestStatus" class="muted"></p><pre id="ingestResult">—</pre></div><div class="grid"><div class="card"><h2>RAG status</h2><button class="secondary" id="ragStatus">Refresh RAG status</button><pre id="rag">—</pre></div><div class="card"><h2>Dead letters</h2><button class="secondary" id="deadletters">Refresh dead letters</button><pre id="dead">—</pre></div></div></div><script>const $=id=>document.getElementById(id),pretty=x=>JSON.stringify(x,null,2);$('send').onclick=async()=>{try{$('status').textContent='Running…';const r=await fetch('/api/chat/'+encodeURIComponent($('conversation').value),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:$('message').value})});const x=await r.json();if(!r.ok)throw new Error(pretty(x));$('answer').textContent=x.answer??'No final answer';$('trace').textContent=pretty(x.agentSteps??'No trace returned');$('usage').textContent=pretty(x.llmUsage??'No usage returned');$('raw').textContent=pretty(x);$('status').textContent='Complete'}catch(e){$('status').textContent='Error';$('raw').textContent=e.message}};$('ingest').onclick=async()=>{try{$('ingestStatus').textContent='Queued…';const version=Number($('docVersion').value||1);const r=await fetch('/api/rag/documents?version='+encodeURIComponent(version),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:$('docId').value,content:$('docContent').value})});const x=await r.json();$('ingestResult').textContent=pretty(x);$('ingestStatus').textContent=r.ok?'Submitted. Wait about 5 seconds, then refresh RAG status and dead letters.':'Request failed'}catch(e){$('ingestStatus').textContent='Error';$('ingestResult').textContent=e.message}};$('ragStatus').onclick=async()=>{$('rag').textContent=pretty(await(await fetch('/api/rag/status')).json())};$('deadletters').onclick=async()=>{$('dead').textContent=pretty(await(await fetch('/api/rag/deadletters')).json())};</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI Engineer Lab</title>
+
+    <style>
+        body {
+            font-family: system-ui;
+            margin: 0;
+            background: #f6f7f9;
+            color: #17202a;
+        }
+
+        .wrap {
+            max-width: 900px;
+            margin: auto;
+            padding: 16px;
+        }
+
+        h1 {
+            font-size: 24px;
+        }
+
+        .card {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            padding: 16px;
+            margin: 12px 0;
+        }
+
+        input,
+        textarea,
+        button {
+            font: inherit;
+            box-sizing: border-box;
+            width: 100%;
+            padding: 12px;
+            margin-top: 8px;
+            border: 1px solid #bbb;
+            border-radius: 8px;
+        }
+
+        textarea {
+            min-height: 90px;
+        }
+
+        button {
+            background: #17202a;
+            color: white;
+            font-weight: 600;
+        }
+
+        .secondary {
+            background: white;
+            color: #17202a;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        pre {
+            white-space: pre-wrap;
+            word-break: break-word;
+            background: #f3f4f6;
+            padding: 12px;
+            border-radius: 8px;
+            max-height: 350px;
+            overflow: auto;
+        }
+
+        .muted {
+            color: #68707a;
+            font-size: 14px;
+        }
+
+        @media (max-width: 650px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+        <h1>AI Engineer Lab</h1>
+        <p class="muted">Run the agent and inspect each layer.</p>
+
+        <!-- Agent tester -->
+        <div class="card">
+            <h2>Agent</h2>
+
+            <label for="conversation">Conversation ID</label>
+            <input id="conversation" value="lab1">
+
+            <label for="message">Message</label>
+            <textarea id="message">Explain embeddings using our knowledge base.</textarea>
+
+            <button id="send">Run agent</button>
+            <p id="status" class="muted"></p>
+        </div>
+
+        <!-- Final answer -->
+        <div class="card">
+            <h2>Final answer</h2>
+            <div id="answer">—</div>
+        </div>
+
+        <!-- Agent diagnostics -->
+        <div class="grid">
+            <div class="card">
+                <h2>Agent / tool trace</h2>
+                <pre id="trace">—</pre>
+            </div>
+
+            <div class="card">
+                <h2>Token usage</h2>
+                <pre id="usage">—</pre>
+            </div>
+        </div>
+
+        <!-- Full API response -->
+        <div class="card">
+            <h2>Full response</h2>
+            <pre id="raw">—</pre>
+        </div>
+
+        <!-- RAG ingestion tester -->
+        <div class="card">
+            <h2>RAG ingestion tester</h2>
+
+            <p class="muted">
+                This sends a document to the ingestion pipeline.
+                Use FAIL_INGESTION to deliberately test retries and dead-lettering.
+            </p>
+
+            <label for="docId">Document ID</label>
+            <input id="docId" value="failure-test-ui-1">
+
+            <label for="docVersion">Version</label>
+            <input id="docVersion" type="number" value="1" min="1">
+
+            <label for="docContent">Document content</label>
+            <textarea id="docContent">FAIL_INGESTION</textarea>
+
+            <button id="ingest">Queue document</button>
+            <p id="ingestStatus" class="muted"></p>
+            <pre id="ingestResult">—</pre>
+        </div>
+
+        <!-- RAG diagnostics -->
+        <div class="grid">
+            <div class="card">
+                <h2>RAG status</h2>
+                <button class="secondary" id="ragStatus">Refresh RAG status</button>
+                <pre id="rag">—</pre>
+            </div>
+
+            <div class="card">
+                <h2>Dead letters</h2>
+                <button class="secondary" id="deadletters">Refresh dead letters</button>
+                <pre id="dead">—</pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const $ = id => document.getElementById(id);
+        const pretty = value => JSON.stringify(value, null, 2);
+
+        // Run the agent.
+        $("send").onclick = async () => {
+            try {
+                $("status").textContent = "Running…";
+
+                const conversationId = encodeURIComponent(
+                    $("conversation").value
+                );
+
+                const response = await fetch(
+                    "/api/chat/" + conversationId,
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            message: $("message").value
+                        })
+                    }
+                );
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(pretty(result));
+                }
+
+                $("answer").textContent = result.answer ?? "No final answer";
+                $("trace").textContent = pretty(
+                    result.agentSteps ?? "No trace returned"
+                );
+                $("usage").textContent = pretty(
+                    result.llmUsage ?? "No usage returned"
+                );
+                $("raw").textContent = pretty(result);
+                $("status").textContent = "Complete";
+            }
+            catch (error) {
+                $("status").textContent = "Error";
+                $("raw").textContent = error.message;
+            }
+        };
+
+        // Queue a document for background RAG ingestion.
+        $("ingest").onclick = async () => {
+            try {
+                $("ingestStatus").textContent = "Queued…";
+
+                const version = Number(
+                    $("docVersion").value || 1
+                );
+
+                const response = await fetch(
+                    "/api/rag/documents?version=" + encodeURIComponent(version),
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            id: $("docId").value,
+                            content: $("docContent").value
+                        })
+                    }
+                );
+
+                const result = await response.json();
+                $("ingestResult").textContent = pretty(result);
+
+                $("ingestStatus").textContent = response.ok
+                    ? "Submitted. Wait about 5 seconds, then refresh RAG status and dead letters."
+                    : "Request failed";
+            }
+            catch (error) {
+                $("ingestStatus").textContent = "Error";
+                $("ingestResult").textContent = error.message;
+            }
+        };
+
+        // Inspect current ingestion state.
+        $("ragStatus").onclick = async () => {
+            const response = await fetch("/api/rag/status");
+            const result = await response.json();
+            $("rag").textContent = pretty(result);
+        };
+
+        // Inspect jobs that exhausted their retries.
+        $("deadletters").onclick = async () => {
+            const response = await fetch("/api/rag/deadletters");
+            const result = await response.json();
+            $("dead").textContent = pretty(result);
+        };
+    </script>
+</body>
+</html>
