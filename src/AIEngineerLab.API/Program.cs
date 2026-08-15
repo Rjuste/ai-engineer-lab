@@ -14,102 +14,19 @@ builder.Services.AddSingleton<DeadLetterStore>();
 builder.Services.AddSingleton<RagIngestionService>();
 builder.Services.AddHostedService<RagIngestionWorker>();
 builder.Services.AddSingleton<IRagRetriever, InMemoryRagRetriever>();
+builder.Services.AddSingleton<KnowledgeBaseSearchTool>();
+builder.Services.AddSingleton<AgentOrchestrator>();
 
 var app = builder.Build();
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
 var ingestionService = app.Services.GetRequiredService<RagIngestionService>();
 await ingestionService.SeedAsync();
 
-app.MapGet("/", () => "AI Engineer Lab is running!");
-
-app.MapGet("/api/rag/status", (
-    RagIngestionStatusStore statusStore,
-    IVectorStore vectorStore) => Results.Ok(new
-{
-    vectorCount = vectorStore.Count,
-    documents = statusStore.GetAll()
-}));
-
-app.MapGet("/api/rag/deadletters", (
-    DeadLetterStore deadLetters) => Results.Ok(deadLetters.GetAll()));
-
-app.MapPost("/api/rag/documents", async (
-    RagDocument document,
-    int? version,
-    RagIngestionService ingestion,
-    RagIngestionStatusStore statusStore,
-    CancellationToken cancellationToken) =>
-{
-    var documentVersion = version ?? 1;
-    var key = $"{document.Id}:{documentVersion}";
-    var queued = await ingestion.QueueAsync(document, documentVersion, cancellationToken);
-
-    if (!queued)
-    {
-        return Results.Ok(new
-        {
-            document.Id,
-            version = documentVersion,
-            idempotencyKey = key,
-            status = statusStore.Get(key),
-            duplicate = true
-        });
-    }
-
-    return Results.Accepted(value: new
-    {
-        document.Id,
-        version = documentVersion,
-        idempotencyKey = key,
-        status = "Queued",
-        duplicate = false
-    });
-});
-
-app.MapPost("/api/chat/{conversationId}", async (
-    string conversationId,
-    ChatRequest request,
-    IConversationStore conversationStore,
-    IRagRetriever ragRetriever,
-    ContextBuilder contextBuilder,
-    ILlmService llm,
-    CancellationToken cancellationToken) =>
-{
-    var history = conversationStore.GetHistory(conversationId);
-    var retrievalResults = await ragRetriever.SearchAsync(
-        request.Message,
-        cancellationToken: cancellationToken);
-    var retrievedDocuments = retrievalResults.Select(result => result.Document).ToList();
-    var context = contextBuilder.Build(request.Message, history, retrievedDocuments);
-    var generation = await llm.GenerateAsync(context.Messages, cancellationToken);
-
-    conversationStore.Add(conversationId, new LlmMessage("user", request.Message));
-    conversationStore.Add(conversationId, new LlmMessage("assistant", generation.Text));
-
-    return Results.Ok(new
-    {
-        conversationId,
-        answer = generation.Text,
-        retrievalResults,
-        context = context.Messages,
-        llmUsage = new
-        {
-            generation.InputTokens,
-            generation.OutputTokens,
-            generation.TotalTokens
-        },
-        tokenBudget = new
-        {
-            context.EstimatedInputTokens,
-            context.MaxContextTokens,
-            context.ReservedOutputTokens,
-            context.MaxInputTokens,
-            context.RemainingInputTokens,
-            context.TotalHistoryMessages,
-            context.IncludedHistoryMessages,
-            context.DroppedHistoryMessages
-        }
-    });
-});
-
+app.MapGet("/", () => Results.Redirect("/lab/"));
+app.MapGet("/api/rag/status", (RagIngestionStatusStore statusStore, IVectorStore vectorStore) => Results.Ok(new { vectorCount = vectorStore.Count, documents = statusStore.GetAll() }));
+app.MapGet("/api/rag/deadletters", (DeadLetterStore deadLetters) => Results.Ok(deadLetters.GetAll()));
+app.MapPost("/api/rag/documents", async (RagDocument document, int? version, RagIngestionService ingestion, RagIngestionStatusStore statusStore, CancellationToken cancellationToken) => { var documentVersion=version??1; var key=$"{document.Id}:{documentVersion}"; var queued=await ingestion.QueueAsync(document,documentVersion,cancellationToken); if(!queued)return Results.Ok(new{document.Id,version=documentVersion,idempotencyKey=key,status=statusStore.Get(key),duplicate=true}); return Results.Accepted(value:new{document.Id,version=documentVersion,idempotencyKey=key,status="Queued",duplicate=false}); });
+app.MapPost("/api/chat/{conversationId}", async (string conversationId, ChatRequest request, IConversationStore conversationStore, ContextBuilder contextBuilder, AgentOrchestrator agent, CancellationToken cancellationToken) => { var history=conversationStore.GetHistory(conversationId); var context=contextBuilder.Build(request.Message,history,Array.Empty<RagDocument>()); var result=await agent.RunAsync(context.Messages,cancellationToken); conversationStore.Add(conversationId,new LlmMessage("user",request.Message)); conversationStore.Add(conversationId,new LlmMessage("assistant",result.Text)); return Results.Ok(new{conversationId,answer=result.Text,agentSteps=result.Steps,llmUsage=new{result.InputTokens,result.OutputTokens,result.TotalTokens},context=context.Messages}); });
 app.Run();
