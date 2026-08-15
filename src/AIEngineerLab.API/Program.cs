@@ -37,17 +37,32 @@ app.MapPost("/api/rag/documents", async (
     RagDocument document,
     int? version,
     RagIngestionService ingestion,
+    RagIngestionStatusStore statusStore,
     CancellationToken cancellationToken) =>
 {
     var documentVersion = version ?? 1;
-    await ingestion.QueueAsync(document, documentVersion, cancellationToken);
+    var key = $"{document.Id}:{documentVersion}";
+    var queued = await ingestion.QueueAsync(document, documentVersion, cancellationToken);
+
+    if (!queued)
+    {
+        return Results.Ok(new
+        {
+            document.Id,
+            version = documentVersion,
+            idempotencyKey = key,
+            status = statusStore.Get(key),
+            duplicate = true
+        });
+    }
 
     return Results.Accepted(value: new
     {
         document.Id,
         version = documentVersion,
-        idempotencyKey = $"{document.Id}:{documentVersion}",
-        status = "Queued"
+        idempotencyKey = key,
+        status = "Queued",
+        duplicate = false
     });
 });
 

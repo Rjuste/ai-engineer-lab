@@ -1,5 +1,12 @@
 public class RagIngestionService
 {
+    private static readonly HashSet<string> TerminalStatuses =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Indexed",
+            "DeadLettered"
+        };
+
     private readonly RagIngestionQueue _queue;
     private readonly RagIngestionStatusStore _statusStore;
 
@@ -25,17 +32,21 @@ public class RagIngestionService
             await QueueAsync(document, 1, cancellationToken);
     }
 
-    public async Task QueueAsync(
+    public async Task<bool> QueueAsync(
         RagDocument document,
         int version = 1,
         CancellationToken cancellationToken = default)
     {
         var job = new RagIngestionJob(document, version);
+        var existingStatus = _statusStore.Get(job.IdempotencyKey);
 
-        if (_statusStore.Get(job.IdempotencyKey) == "Indexed")
-            return;
+        // Any existing lifecycle record means this logical operation has already
+        // been accepted. Terminal failures require an explicit redrive operation.
+        if (existingStatus is not null)
+            return false;
 
         _statusStore.Set(job.IdempotencyKey, "Queued");
         await _queue.EnqueueAsync(job, cancellationToken);
+        return true;
     }
 }
