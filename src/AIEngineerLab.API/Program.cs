@@ -19,6 +19,7 @@ builder.Services.AddSingleton<RetrievalEvalHarness>();
 builder.Services.AddSingleton<GenerationEvalHarness>();
 builder.Services.AddSingleton<LlmGenerationJudge>();
 builder.Services.AddSingleton<JudgeCalibrationHarness>();
+builder.Services.AddSingleton<AgentEvalHarness>();
 
 builder.Services.AddSingleton<IAgentTool, KnowledgeBaseSearchTool>();
 builder.Services.AddSingleton<IAgentTool, RagStatusTool>();
@@ -75,7 +76,6 @@ app.MapPost("/api/rag/advanced-search", async (AdvancedRagSearchRequest request,
 
 app.MapGet("/api/evals/retrieval/cases", (RetrievalEvalHarness harness) => Results.Ok(harness.GoldenDataset));
 app.MapPost("/api/evals/retrieval/run", async (int? k, int? runs, RetrievalEvalHarness harness, CancellationToken cancellationToken) => Results.Ok(await harness.RunAsync(k ?? 5, runs ?? 1, cancellationToken)));
-
 app.MapGet("/api/evals/generation/cases", (GenerationEvalHarness harness) => Results.Ok(harness.GoldenDataset));
 app.MapPost("/api/evals/generation/run", (GenerationEvalHarness harness) => Results.Ok(harness.RunGoldenDataset()));
 app.MapPost("/api/evals/generation/evaluate", (GenerationEvalRequest request, GenerationEvalHarness harness) =>
@@ -96,6 +96,25 @@ app.MapPost("/api/evals/generation/judge", async (GenerationEvalRequest request,
 });
 app.MapGet("/api/evals/generation/calibration/cases", (JudgeCalibrationHarness harness) => Results.Ok(harness.Dataset));
 app.MapPost("/api/evals/generation/calibration/run", async (JudgeCalibrationHarness harness, CancellationToken cancellationToken) => Results.Ok(await harness.RunAsync(cancellationToken)));
+
+app.MapGet("/api/evals/agent/cases", () => Results.Ok(AgentGoldenDataset.Cases));
+app.MapPost("/api/evals/agent/evaluate", (AgentEvalRequest request, AgentEvalHarness harness) => Results.Ok(harness.Evaluate(request)));
+app.MapPost("/api/evals/agent/run", async (AgentOrchestrator agent, AgentEvalHarness harness, CancellationToken cancellationToken) =>
+{
+    var results = new List<object>();
+    foreach (var expectation in AgentGoldenDataset.Cases)
+    {
+        var run = await agent.RunAsync([new LlmMessage("user", expectation.UserRequest)], cancellationToken);
+        var eval = harness.Evaluate(new AgentEvalRequest(expectation, run));
+        results.Add(new { expectation, run, eval });
+    }
+    return Results.Ok(new
+    {
+        totalCases = results.Count,
+        passedCases = results.Count(x => ((dynamic)x).eval.Passed),
+        results
+    });
+});
 
 app.MapPost("/api/rag/documents", async (RagDocument document, int? version, RagIngestionService ingestion, RagIngestionStatusStore statusStore, CancellationToken cancellationToken) =>
 {
