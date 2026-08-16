@@ -17,6 +17,7 @@ builder.Services.AddSingleton<IRagRetriever, InMemoryRagRetriever>();
 builder.Services.AddSingleton<AdvancedRagPipeline>();
 builder.Services.AddSingleton<RetrievalEvalHarness>();
 builder.Services.AddSingleton<GenerationEvalHarness>();
+builder.Services.AddSingleton<LlmGenerationJudge>();
 
 builder.Services.AddSingleton<IAgentTool, KnowledgeBaseSearchTool>();
 builder.Services.AddSingleton<IAgentTool, RagStatusTool>();
@@ -72,11 +73,7 @@ app.MapPost("/api/rag/advanced-search", async (AdvancedRagSearchRequest request,
 });
 
 app.MapGet("/api/evals/retrieval/cases", (RetrievalEvalHarness harness) => Results.Ok(harness.GoldenDataset));
-app.MapPost("/api/evals/retrieval/run", async (int? k, int? runs, RetrievalEvalHarness harness, CancellationToken cancellationToken) =>
-{
-    var report = await harness.RunAsync(k ?? 5, runs ?? 1, cancellationToken);
-    return Results.Ok(report);
-});
+app.MapPost("/api/evals/retrieval/run", async (int? k, int? runs, RetrievalEvalHarness harness, CancellationToken cancellationToken) => Results.Ok(await harness.RunAsync(k ?? 5, runs ?? 1, cancellationToken)));
 
 app.MapGet("/api/evals/generation/cases", (GenerationEvalHarness harness) => Results.Ok(harness.GoldenDataset));
 app.MapPost("/api/evals/generation/run", (GenerationEvalHarness harness) => Results.Ok(harness.RunGoldenDataset()));
@@ -86,6 +83,15 @@ app.MapPost("/api/evals/generation/evaluate", (GenerationEvalRequest request, Ge
     if (string.IsNullOrWhiteSpace(request.Evidence)) return Results.BadRequest(new { error = "Evidence is required." });
     if (string.IsNullOrWhiteSpace(request.Answer)) return Results.BadRequest(new { error = "Answer is required." });
     return Results.Ok(harness.Evaluate(request));
+});
+app.MapPost("/api/evals/generation/judge", async (GenerationEvalRequest request, GenerationEvalHarness deterministic, LlmGenerationJudge judge, CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Question)) return Results.BadRequest(new { error = "Question is required." });
+    if (string.IsNullOrWhiteSpace(request.Evidence)) return Results.BadRequest(new { error = "Evidence is required." });
+    if (string.IsNullOrWhiteSpace(request.Answer)) return Results.BadRequest(new { error = "Answer is required." });
+    var deterministicResult = deterministic.Evaluate(request);
+    var llmResult = await judge.EvaluateAsync(new LlmJudgeRequest(request.Question, request.Evidence, request.Answer), cancellationToken);
+    return Results.Ok(new { deterministic = deterministicResult, llmJudge = llmResult, disagreement = deterministicResult.Passed != llmResult.Passed });
 });
 
 app.MapPost("/api/rag/documents", async (RagDocument document, int? version, RagIngestionService ingestion, RagIngestionStatusStore statusStore, CancellationToken cancellationToken) =>
