@@ -19,6 +19,10 @@
         .grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:9px; }
         .pipeline { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin:12px 0; }
         .pipeline-step { border:1px solid #dfe5ec; border-radius:11px; padding:10px; background:#f8fafc; text-align:center; font-size:12px; font-weight:750; }
+        .lab-links { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+        .lab-link { display:block; text-decoration:none; color:#17202a; background:#f8fafc; border:1px solid #dfe5ec; border-radius:12px; padding:13px; }
+        .lab-link strong { display:block; margin-bottom:4px; }
+        .lab-link span { color:#667085; font-size:12px; line-height:1.4; }
         label { display:block; margin-top:10px; font-size:13px; font-weight:700; color:#344054; }
         input,textarea,button,select { font:inherit; }
         input,textarea,select { width:100%; padding:12px; margin-top:6px; border:1px solid #cfd4dc; border-radius:10px; background:white; }
@@ -77,7 +81,7 @@
         .stage-title h3 { margin:0; font-size:14px; }
         .stage-badge { font-size:11px; background:#eef2ff; padding:4px 7px; border-radius:999px; color:#475467; }
         @media(max-width:950px){ .obs-summary{grid-template-columns:repeat(3,1fr)} .pipeline{grid-template-columns:1fr 1fr 1fr} .grid-4{grid-template-columns:1fr 1fr} }
-        @media(max-width:720px){ .grid,.test-grid{grid-template-columns:1fr} .metrics{grid-template-columns:repeat(3,1fr)} .wrap{padding:12px} .hero{border-radius:14px;padding:18px} .pipeline{grid-template-columns:1fr 1fr} }
+        @media(max-width:720px){ .grid,.test-grid,.lab-links{grid-template-columns:1fr} .metrics{grid-template-columns:repeat(3,1fr)} .wrap{padding:12px} .hero{border-radius:14px;padding:18px} .pipeline{grid-template-columns:1fr 1fr} }
         @media(max-width:480px){ .metrics,.obs-summary,.grid-4{grid-template-columns:1fr 1fr} }
     </style>
 </head>
@@ -86,6 +90,15 @@
     <div class="hero">
         <h1>AI Engineer Lab</h1>
         <p>Agent orchestration, resilience, observability, ingestion, and production-oriented RAG in one place.</p>
+    </div>
+
+    <div class="card">
+        <h2>Phase labs</h2>
+        <p class="section-copy">Jump directly to the focused evaluation dashboards created in the recent phases.</p>
+        <div class="lab-links">
+            <a class="lab-link" href="/lab/evals.html"><strong>Phase 19 · Retrieval Evals</strong><span>Golden retrieval cases, Recall@K, Precision@K, MRR, repeated-run stability, and ranking instability.</span></a>
+            <a class="lab-link" href="/lab/generation-evals.html"><strong>Phase 20 · Generation Evals</strong><span>Deterministic answer checks, LLM-as-a-judge comparison, and judge calibration against human labels.</span></a>
+        </div>
     </div>
 
     <div class="card">
@@ -145,84 +158,24 @@
         <div id="ragSummary" class="chips"><span class="chip">Run retrieval to inspect the funnel.</span></div>
 
         <div class="grid">
-            <div class="card">
-                <div class="stage-title"><h3>Vector results</h3><span id="vectorCount" class="stage-badge">0</span></div>
-                <div id="vectorStage" class="json-viewer">—</div>
-            </div>
-            <div class="card">
-                <div class="stage-title"><h3>Keyword results</h3><span id="keywordCount" class="stage-badge">0</span></div>
-                <div id="keywordStage" class="json-viewer">—</div>
-            </div>
+            <div class="card"><div class="stage-title"><h3>Vector results</h3><span id="vectorCount" class="stage-badge">0</span></div><div id="vectorStage" class="json-viewer">—</div></div>
+            <div class="card"><div class="stage-title"><h3>Keyword results</h3><span id="keywordCount" class="stage-badge">0</span></div><div id="keywordStage" class="json-viewer">—</div></div>
         </div>
         <div class="grid">
-            <div class="card">
-                <div class="stage-title"><h3>Fused + reranked candidates</h3><span id="fusedCount" class="stage-badge">0</span></div>
-                <div id="fusedStage" class="json-viewer">—</div>
-            </div>
-            <div class="card">
-                <div class="stage-title"><h3>Final LLM context candidates</h3><span id="finalCount" class="stage-badge">0</span></div>
-                <div id="finalStage" class="json-viewer">—</div>
-            </div>
+            <div class="card"><div class="stage-title"><h3>Fused + reranked candidates</h3><span id="fusedCount" class="stage-badge">0</span></div><div id="fusedStage" class="json-viewer">—</div></div>
+            <div class="card"><div class="stage-title"><h3>Final LLM context candidates</h3><span id="finalCount" class="stage-badge">0</span></div><div id="finalStage" class="json-viewer">—</div></div>
         </div>
-        <div class="card">
-            <h3 style="margin-top:0">Advanced retrieval response</h3>
-            <div class="toolbar"><button onclick="expandAll('advancedRaw')">Expand all</button><button onclick="collapseAll('advancedRaw')">Collapse all</button></div>
-            <div id="advancedRaw" class="json-viewer">—</div>
-        </div>
+        <div class="card"><h3 style="margin-top:0">Advanced retrieval response</h3><div class="toolbar"><button onclick="expandAll('advancedRaw')">Expand all</button><button onclick="collapseAll('advancedRaw')">Collapse all</button></div><div id="advancedRaw" class="json-viewer">—</div></div>
     </div>
 
-    <div class="card">
-        <h2>Resilience lab</h2>
-        <p class="section-copy">These quick tests go through the LLM. The model selects the simulation tool, then the orchestrator applies retry and timeout policy.</p>
-        <div class="test-grid">
-            <button class="test" data-test="recover"><strong>Transient failure → recovery</strong><span>Fails once. One retry should recover.</span></button>
-            <button class="test" data-test="exhaust"><strong>Retries exhausted</strong><span>Fails twice. Current one-retry policy cannot recover.</span></button>
-            <button class="test" data-test="timeout"><strong>Tool timeout</strong><span>Waits 5 seconds while tool timeout is 3 seconds.</span></button>
-        </div>
-    </div>
-
+    <div class="card"><h2>Resilience lab</h2><p class="section-copy">These quick tests go through the LLM. The model selects the simulation tool, then the orchestrator applies retry and timeout policy.</p><div class="test-grid"><button class="test" data-test="recover"><strong>Transient failure → recovery</strong><span>Fails once. One retry should recover.</span></button><button class="test" data-test="exhaust"><strong>Retries exhausted</strong><span>Fails twice. Current one-retry policy cannot recover.</span></button><button class="test" data-test="timeout"><strong>Tool timeout</strong><span>Waits 5 seconds while tool timeout is 3 seconds.</span></button></div></div>
     <div class="card"><h2>Execution policy</h2><div id="policy" class="policy"><span class="chip">Loading policy…</span></div></div>
     <div class="card"><h2>Final answer</h2><div id="answer" class="answer">—</div></div>
-
-    <div class="card">
-        <h2>Observability</h2>
-        <p class="section-copy">One agent run is a trace. Each LLM call or tool execution is a span inside that trace.</p>
-        <div id="obsSummary" class="obs-summary">
-            <div class="metric"><div class="label">Status</div><div class="value">—</div></div>
-            <div class="metric"><div class="label">Run ID</div><div class="value">—</div></div>
-            <div class="metric"><div class="label">Latency</div><div class="value">—</div></div>
-            <div class="metric"><div class="label">LLM calls</div><div class="value">—</div></div>
-            <div class="metric"><div class="label">Tool calls</div><div class="value">—</div></div>
-            <div class="metric"><div class="label">Tokens</div><div class="value">—</div></div>
-        </div>
-        <div id="spanList" class="span-list"><div class="section-copy">Run the agent to see operation spans.</div></div>
-    </div>
-
-    <div class="grid">
-        <div class="card"><h2>Agent events</h2><p class="section-copy">Follow model decisions, retries, failures, and completion in order.</p><div id="trace" class="trace"><div class="step"><div class="step-desc">Run the agent to see the event trace.</div></div></div></div>
-        <div class="card"><h2>Token usage</h2><div id="usage" class="metrics"><div class="metric"><div class="label">Input</div><div class="value">—</div></div><div class="metric"><div class="label">Output</div><div class="value">—</div></div><div class="metric"><div class="label">Total</div><div class="value">—</div></div></div></div>
-    </div>
-
+    <div class="card"><h2>Observability</h2><p class="section-copy">One agent run is a trace. Each LLM call or tool execution is a span inside that trace.</p><div id="obsSummary" class="obs-summary"><div class="metric"><div class="label">Status</div><div class="value">—</div></div><div class="metric"><div class="label">Run ID</div><div class="value">—</div></div><div class="metric"><div class="label">Latency</div><div class="value">—</div></div><div class="metric"><div class="label">LLM calls</div><div class="value">—</div></div><div class="metric"><div class="label">Tool calls</div><div class="value">—</div></div><div class="metric"><div class="label">Tokens</div><div class="value">—</div></div></div><div id="spanList" class="span-list"><div class="section-copy">Run the agent to see operation spans.</div></div></div>
+    <div class="grid"><div class="card"><h2>Agent events</h2><p class="section-copy">Follow model decisions, retries, failures, and completion in order.</p><div id="trace" class="trace"><div class="step"><div class="step-desc">Run the agent to see the event trace.</div></div></div></div><div class="card"><h2>Token usage</h2><div id="usage" class="metrics"><div class="metric"><div class="label">Input</div><div class="value">—</div></div><div class="metric"><div class="label">Output</div><div class="value">—</div></div><div class="metric"><div class="label">Total</div><div class="value">—</div></div></div></div></div>
     <div class="card"><h2>Full agent response</h2><div class="toolbar"><button onclick="expandAll('raw')">Expand all</button><button onclick="collapseAll('raw')">Collapse all</button></div><div id="raw" class="json-viewer">—</div></div>
-
-    <div class="card">
-        <h2>RAG ingestion tester</h2>
-        <p class="section-copy">Metadata is stored with the document and copied to every chunk. Use <b>FAIL_INGESTION</b> as content to simulate ingestion retries/dead-lettering.</p>
-        <div class="grid"><div><label for="docId">Document ID</label><input id="docId" value="custom-doc-1"></div><div><label for="docVersion">Version</label><input id="docVersion" type="number" value="1" min="1"></div></div>
-        <label for="docContent">Document content</label><textarea id="docContent">A custom internal document for retrieval testing.</textarea>
-        <div class="grid-4">
-            <div><label for="docTenant">Tenant</label><input id="docTenant" value="tenant-123"></div>
-            <div><label for="docCountry">Country</label><input id="docCountry" value="US"></div>
-            <div><label for="docYear">Year</label><input id="docYear" type="number" value="2026"></div>
-            <div><label for="docDepartment">Department</label><input id="docDepartment" value="Engineering"></div>
-        </div>
-        <button id="ingest">Queue document</button><p id="ingestStatus" class="status"></p><div id="ingestResult" class="json-viewer">—</div>
-    </div>
-
-    <div class="grid">
-        <div class="card"><h2>RAG status</h2><button class="secondary" id="ragStatus">Refresh RAG status</button><div id="rag" class="json-viewer">—</div></div>
-        <div class="card"><h2>Dead letters</h2><button class="secondary" id="deadletters">Refresh dead letters</button><div id="dead" class="json-viewer">—</div></div>
-    </div>
+    <div class="card"><h2>RAG ingestion tester</h2><p class="section-copy">Metadata is stored with the document and copied to every chunk. Use <b>FAIL_INGESTION</b> as content to simulate ingestion retries/dead-lettering.</p><div class="grid"><div><label for="docId">Document ID</label><input id="docId" value="custom-doc-1"></div><div><label for="docVersion">Version</label><input id="docVersion" type="number" value="1" min="1"></div></div><label for="docContent">Document content</label><textarea id="docContent">A custom internal document for retrieval testing.</textarea><div class="grid-4"><div><label for="docTenant">Tenant</label><input id="docTenant" value="tenant-123"></div><div><label for="docCountry">Country</label><input id="docCountry" value="US"></div><div><label for="docYear">Year</label><input id="docYear" type="number" value="2026"></div><div><label for="docDepartment">Department</label><input id="docDepartment" value="Engineering"></div></div><button id="ingest">Queue document</button><p id="ingestStatus" class="status"></p><div id="ingestResult" class="json-viewer">—</div></div>
+    <div class="grid"><div class="card"><h2>RAG status</h2><button class="secondary" id="ragStatus">Refresh RAG status</button><div id="rag" class="json-viewer">—</div></div><div class="card"><h2>Dead letters</h2><button class="secondary" id="deadletters">Refresh dead letters</button><div id="dead" class="json-viewer">—</div></div></div>
 </div>
 <script>
 const $=id=>document.getElementById(id);
