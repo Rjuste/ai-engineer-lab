@@ -16,6 +16,7 @@ builder.Services.AddHostedService<RagIngestionWorker>();
 builder.Services.AddSingleton<IRagRetriever, InMemoryRagRetriever>();
 builder.Services.AddSingleton<AdvancedRagPipeline>();
 builder.Services.AddSingleton<RetrievalEvalHarness>();
+builder.Services.AddSingleton<GenerationEvalHarness>();
 
 builder.Services.AddSingleton<IAgentTool, KnowledgeBaseSearchTool>();
 builder.Services.AddSingleton<IAgentTool, RagStatusTool>();
@@ -75,6 +76,16 @@ app.MapPost("/api/evals/retrieval/run", async (int? k, int? runs, RetrievalEvalH
 {
     var report = await harness.RunAsync(k ?? 5, runs ?? 1, cancellationToken);
     return Results.Ok(report);
+});
+
+app.MapGet("/api/evals/generation/cases", (GenerationEvalHarness harness) => Results.Ok(harness.GoldenDataset));
+app.MapPost("/api/evals/generation/run", (GenerationEvalHarness harness) => Results.Ok(harness.RunGoldenDataset()));
+app.MapPost("/api/evals/generation/evaluate", (GenerationEvalRequest request, GenerationEvalHarness harness) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Question)) return Results.BadRequest(new { error = "Question is required." });
+    if (string.IsNullOrWhiteSpace(request.Evidence)) return Results.BadRequest(new { error = "Evidence is required." });
+    if (string.IsNullOrWhiteSpace(request.Answer)) return Results.BadRequest(new { error = "Answer is required." });
+    return Results.Ok(harness.Evaluate(request));
 });
 
 app.MapPost("/api/rag/documents", async (RagDocument document, int? version, RagIngestionService ingestion, RagIngestionStatusStore statusStore, CancellationToken cancellationToken) =>
