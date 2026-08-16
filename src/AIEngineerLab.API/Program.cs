@@ -18,6 +18,7 @@ builder.Services.AddSingleton<AdvancedRagPipeline>();
 builder.Services.AddSingleton<RetrievalEvalHarness>();
 builder.Services.AddSingleton<GenerationEvalHarness>();
 builder.Services.AddSingleton<LlmGenerationJudge>();
+builder.Services.AddSingleton<JudgeCalibrationHarness>();
 
 builder.Services.AddSingleton<IAgentTool, KnowledgeBaseSearchTool>();
 builder.Services.AddSingleton<IAgentTool, RagStatusTool>();
@@ -93,6 +94,8 @@ app.MapPost("/api/evals/generation/judge", async (GenerationEvalRequest request,
     var llmResult = await judge.EvaluateAsync(new LlmJudgeRequest(request.Question, request.Evidence, request.Answer), cancellationToken);
     return Results.Ok(new { deterministic = deterministicResult, llmJudge = llmResult, disagreement = deterministicResult.Passed != llmResult.Passed });
 });
+app.MapGet("/api/evals/generation/calibration/cases", (JudgeCalibrationHarness harness) => Results.Ok(harness.Dataset));
+app.MapPost("/api/evals/generation/calibration/run", async (JudgeCalibrationHarness harness, CancellationToken cancellationToken) => Results.Ok(await harness.RunAsync(cancellationToken)));
 
 app.MapPost("/api/rag/documents", async (RagDocument document, int? version, RagIngestionService ingestion, RagIngestionStatusStore statusStore, CancellationToken cancellationToken) =>
 {
